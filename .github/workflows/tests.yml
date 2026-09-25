@@ -80,6 +80,61 @@ jobs:
           print("LIVE BUILD OK")
           PY
 
+      - name: Prove the direct nfl.com reader works against the live site
+        # The charter asks for data straight from the NFL. This is the step that proves
+        # the no-credentials reader really does read nfl.com, on every CI run, against
+        # the live site - and that what it reads agrees with the data we just built.
+        # If nfl.com changes its markup, this is where it is caught, not in production.
+        run: |
+          WEEK=$(python3 -c "
+          import json
+          m = json.load(open('/tmp/live-build/manifest.json'))
+          c = m['current']
+          print(c['season'], c['season_type'], c['week'])
+          ")
+          set -- $WEEK
+          echo "Checking official nfl.com read for season=$1 type=$2 week=$3"
+          python3 pipeline/nfl_direct.py --diagnose \
+            --season "$1" --type "$2" --week "$3" --dump-chars 4000
+
+      - name: Diff the official nfl.com read against the published build
+        run: |
+          python3 - <<'PY'
+          import json, sys
+          sys.path.insert(0, 'pipeline')
+          from nfl_direct import fetch_week, crosscheck_week
+
+          m = json.load(open('/tmp/live-build/manifest.json'))
+          cur = m['current']
+          season = json.load(open(f"/tmp/live-build/seasons/{cur['season']}.json"))
+          ours = [g for g in season['games']
+                  if g.get('week') == cur['week'] and g.get('season_type') == cur['season_type']]
+
+          official = fetch_week(cur['season'], cur['season_type'], cur['week'])
+          print("nfl.com read:", official['http_status'], official['bytes'], "bytes,",
+                len(official['games']), "games; parse:", official['parse'])
+
+          if not official['ok']:
+              print("::error::The direct nfl.com reader returned no games.")
+              print("error:", official['error'])
+              sys.exit(1)
+
+          check = crosscheck_week(official, ours)
+          print(json.dumps({k: v for k, v in check.items() if k != 'rows'}, indent=2))
+          # A score disagreement between nfl.com and the published data is a real
+          # finding: fail loudly so a human looks at it rather than shipping it.
+          if check['mismatched']:
+              print("::error::nfl.com disagrees with the published scores:")
+              for row in check['rows']:
+                  print("  ", row)
+              sys.exit(1)
+          # And the reader must actually have compared something, or it proved nothing.
+          if check['comparable'] < 1 and check['official_no_score'] < 1:
+              print("::error::Nothing was compared; the check proved nothing.")
+              sys.exit(1)
+          print("DIRECT NFL READ OK")
+          PY
+
       - name: JavaScript syntax check
         run: |
           for f in docs/assets/js/*.js; do

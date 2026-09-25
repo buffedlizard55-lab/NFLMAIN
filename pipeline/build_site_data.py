@@ -29,12 +29,14 @@ import datetime as _dt
 import json
 import os
 import sys
+import time
 from typing import Optional
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import http_util
 import nfl_sources as S
+from nfl_direct import crosscheck_week, fetch_week as fetch_official_week
 from normalize import (
     PBP_REQUIRED_COLUMNS,
     SCHEDULE_REQUIRED_COLUMNS,
@@ -328,15 +330,27 @@ def load_pbp_for_season(loader: Loader, season: int, games: list, out_dir: str,
 
     index = {g["game_id"]: g for g in games if g.get("game_id")}
     grouped: dict = {}
+    # NFL identifiers are read off the raw rows here, BEFORE normalise_play drops them
+    # for size. Without this the play-by-play can never contradict the schedule on the
+    # NFL API UUID, because by the time build_game_pbp saw the plays the id was gone.
+    pbp_ids: dict = {}
     for row in rows:
         gid = clean(row.get("game_id"))
         if not gid:
             continue
+        slot = pbp_ids.setdefault(gid, {"nfl_api_id": None, "old_game_id": None})
+        if not slot["nfl_api_id"]:
+            slot["nfl_api_id"] = clean(row.get("nfl_api_id"))
+        if not slot["old_game_id"]:
+            slot["old_game_id"] = clean(row.get("old_game_id"))
         play = normalise_play(row)
         if play is None:
             continue
         grouped.setdefault(gid, []).append(play)
         stat["plays"] += 1
+    stat["games_with_nfl_api_id"] = sum(
+        1 for v in pbp_ids.values() if v.get("nfl_api_id")
+    )
 
     written = 0
     limit = max_games if max_games else len(grouped)
@@ -354,8 +368,8 @@ def load_pbp_for_season(loader: Loader, season: int, games: list, out_dir: str,
             p.pop("nfl_api_id", None)
             p.pop("old_game_id", None)
         compacted = [compact_play(p) for p in plays]
-        doc = build_game_pbp(compacted, index[gid], url, list(header))
-        doc["pbp"]["plays"] = compacted
+        doc = build_game_pbp(compacted, index[gid], url, list(header),
+                             pbp_ids.get(gid))
         path = os.path.join(out_dir, "pbp", f"{gid}.json")
         # `stat["bytes"]` is the DOWNLOAD size and must stay that way: an earlier
         # revision reassigned it to the last written file, silently corrupting the
@@ -387,6 +401,126 @@ def load_pbp_for_season(loader: Loader, season: int, games: list, out_dir: str,
 
 
 # --------------------------------------------------------------------------- #
+# Direct read of nfl.com (the league's own site, no credentials)
+# --------------------------------------------------------------------------- #
+
+
+def direct_read(current: dict, by_season: dict, out_dir: str, weeks_back: int,
+                games_this_season: list) -> dict:
+    """Read the official NFL week page(s) and diff them against what we publish.
+
+    This is the one place the project talks to the NFL itself with no intermediary, so
+    the result is published as its own artefact under ``docs/data/official/`` rather
+    than folded into the mirror-derived numbers. The mirror remains the display source
+    (it is the feed that also carries play-by-play); this is the league's own answer,
+    kept separate, and every disagreement is flagged.
+    """
+    season = current["season"]
+    season_type = current["season_type"]
+    week = current["week"]
+    weeks = [w for w in (weeks_for(games_this_season).get(season_type) or []) if w <= week]
+    chosen = weeks[-weeks_back:] if weeks_back > 0 else []
+
+    summary = {
+        "attempted": False,
+        "weeks_requested": chosen,
+        "weeks_read": 0,
+        "weeks_unavailable": 0,
+        "games_read": 0,
+        "games_compared": 0,
+        "score_matches": 0,
+        "score_mismatches": 0,
+        "status_confirmations": 0,
+        "status_taken_from_official": 0,
+        "official_only": 0,
+        "mirror_only": 0,
+        "disagreements": [],
+        "read_at": utcnow().isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "documents": [],
+        "errors": [],
+        "note": (
+            "Direct read of https://www.nfl.com/schedules (the league's own site, "
+            "unauthenticated). Used to confirm or contradict the published scores and to "
+            "correct an estimated game status. It never supplies play-by-play."
+        ),
+    }
+
+    for index, wk in enumerate(chosen):
+        if index:
+            time.sleep(2)  # be polite to nfl.com
+        official = fetch_official_week(season, season_type, wk)
+        summary["attempted"] = True
+        games = [
+            g for g in by_season.get(season, [])
+            if g.get("week") == wk and g.get("season_type") == season_type
+        ]
+        check = crosscheck_week(official, games)
+        doc = {
+            "season": season,
+            "season_type": season_type,
+            "week": wk,
+            "official": official,
+            "crosscheck": check,
+            "provenance": {
+                "source_id": "nfl-week-page",
+                "upstream_url": official.get("url"),
+                "publisher": "National Football League",
+                "official_review_url": official.get("url"),
+                "note": (
+                    "Read directly from nfl.com. A page that could not be fetched or "
+                    "parsed is recorded as unavailable; no value is inferred from its "
+                    "absence."
+                ),
+            },
+        }
+        write_json(os.path.join(out_dir, "official", f"{season}_{season_type}_{wk}.json"),
+                   doc)
+        summary["documents"].append({
+            "week": wk,
+            "url": official.get("url"),
+            "ok": official.get("ok"),
+            "http_status": official.get("http_status"),
+            "bytes": official.get("bytes"),
+            "sha256": official.get("sha256"),
+            "games": len(official.get("games") or []),
+            "error": official.get("error"),
+            "parse_method_counts": _method_counts(official.get("games") or []),
+        })
+        if official.get("ok"):
+            summary["weeks_read"] += 1
+            summary["games_read"] += len(official["games"])
+            summary["games_compared"] += check["comparable"]
+            summary["score_matches"] += check["matched"]
+            summary["score_mismatches"] += check["mismatched"]
+            summary["status_confirmations"] += check["status_confirmations"]
+            summary["status_taken_from_official"] += check["status_disagreements"]
+            summary["official_only"] += check["official_only"]
+            summary["mirror_only"] += check["mirror_only"]
+            for row in check.get("rows") or []:
+                summary["disagreements"].append({"week": wk, **row})
+        else:
+            summary["weeks_unavailable"] += 1
+            if official.get("error"):
+                summary["errors"].append(f"week {wk}: {official['error']}")
+        http_util.log(
+            f"  official nfl.com week {wk}: http={official.get('http_status')} "
+            f"games={len(official.get('games') or [])} matched={check['matched']} "
+            f"mismatched={check['mismatched']} unavailable={not official.get('ok')}"
+        )
+
+    write_json(os.path.join(out_dir, "official", "index.json"), summary)
+    return summary
+
+
+def _method_counts(games: list) -> dict:
+    counts: dict = {}
+    for g in games:
+        key = g.get("method") or "unknown"
+        counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
+# --------------------------------------------------------------------------- #
 # Report
 # --------------------------------------------------------------------------- #
 
@@ -405,6 +539,59 @@ def build_limitations(ctx: dict) -> list:
     irr = ctx["irregularities"]
     by_season = ctx["by_season"]
     current = ctx["current"]
+    direct = ctx.get("official_direct") or {}
+
+    # The direct read is the closest thing this project has to the league's own answer,
+    # so its actual outcome - not a remembered claim - decides what the site says about
+    # how current the feed is.
+    if direct.get("attempted") and direct.get("weeks_read"):
+        lims.append({
+            "title": (
+                "Scores are confirmed against nfl.com directly, for the last "
+                f"{direct.get('weeks_read')} week(s) only"
+            ),
+            "detail": (
+                f"This build read {direct.get('games_read', 0)} game(s) off nfl.com's own "
+                f"week page(s) and compared them with the published data: "
+                f"{direct.get('score_matches', 0)} matched, "
+                f"{direct.get('score_mismatches', 0)} disagreed. Reading the whole 1999-"
+                "present archive off nfl.com each run would mean thousands of page "
+                "requests against the league's servers, which is neither necessary nor "
+                "polite."
+            ),
+            "action": (
+                "Raise --direct-weeks to widen the direct comparison, or run "
+                "'Backfill play-by-play' for older seasons."
+            ),
+        })
+    elif direct.get("attempted"):
+        lims.append({
+            "title": "The direct read of nfl.com did not return any games this build",
+            "detail": (
+                "The pipeline asked nfl.com for its own week page and could not use the "
+                "answer"
+                + (f": {direct.get('errors')}" if direct.get("errors") else ".")
+                + " Nothing was inferred from the failure - the published numbers are "
+                "still the mirror's, and the failure is recorded in this manifest."
+            ),
+            "action": (
+                "Check reports/verification.md section 4.1 for the HTTP status and any "
+                "parser error, then compare against https://www.nfl.com/scores/."
+            ),
+        })
+    elif not direct.get("attempted"):
+        lims.append({
+            "title": "No direct read of nfl.com was performed for this snapshot",
+            "detail": (
+                "This snapshot was produced by an offline or restricted build "
+                f"({direct.get('skipped_reason') or 'direct read disabled'}), so the "
+                "scores in it have not been compared with the league's own page."
+            ),
+            "action": (
+                "Run the 'Refresh NFL data' workflow, which performs the direct read on "
+                "every run."
+            ),
+        })
 
     if not api.get("configured"):
         lims.append({
@@ -587,7 +774,62 @@ def render_report(ctx: dict) -> str:
     a(f"* Current season / type / week (inferred, not hardcoded): "
       f"**{cov['current_season']} {cov['current_type']} week {cov['current_week']}**")
     a("")
-    a("## 4. Official NFL API cross-check")
+    a("## 4. Direct read of nfl.com (the league's own site)")
+    a("")
+    direct = ctx.get("official_direct") or {}
+    if not direct:
+        a("**Not run.** This build did not read nfl.com directly.")
+    elif not direct.get("attempted"):
+        a(f"**Not run.** {direct.get('skipped_reason') or 'disabled for this build.'}")
+    else:
+        a(
+            f"**Run.** {direct.get('weeks_read', 0)} week page(s) read, "
+            f"{direct.get('games_read', 0)} game(s) seen, "
+            f"{direct.get('games_compared', 0)} comparable, "
+            f"**{direct.get('score_matches', 0)} score(s) matched**, "
+            f"**{direct.get('score_mismatches', 0)} disagreed**, "
+            f"{direct.get('weeks_unavailable', 0)} week page(s) unavailable. "
+            f"Read at {direct.get('read_at')}."
+        )
+        a("")
+        a("These requests were made by this build, with no credentials, to the league's "
+          "own website. They are the direct-from-NFL check: what nfl.com published, "
+          "byte count and digest included, versus what this project publishes.")
+        a("")
+        a("| Week | nfl.com URL | HTTP | Bytes | SHA-256 (first 16) | Games on page | "
+          "Parsed by | Result |")
+        a("|---|---|---|---|---|---|---|---|")
+        for d in direct.get("documents", []):
+            digest = (d.get("sha256") or "")[:16] or "-"
+            methods = ", ".join(
+                f"{k}={v}" for k, v in sorted((d.get("parse_method_counts") or {}).items())
+            ) or "-"
+            result = "read" if d.get("ok") else (d.get("error") or "unavailable")
+            a(
+                f"| {d.get('week')} | <{d.get('url')}> | {d.get('http_status')} | "
+                f"{d.get('bytes')} | `{digest}` | {d.get('games')} | {methods} | {result} |"
+            )
+        a("")
+        rows = direct.get("disagreements") or []
+        a(f"**{len(rows)}** difference(s) between nfl.com and this project's published "
+          "record are listed below." if rows
+          else "**No difference between nfl.com's own page and this project's published "
+               "record was found in the weeks read.**")
+        a("")
+        if rows:
+            a("| Week | Kind | Game | ours | nfl.com | Detail |")
+            a("|---|---|---|---|---|---|")
+            for r in rows:
+                ours = r.get("ours") or "-"
+                theirs = r.get("official") or "-"
+                a(f"| {r.get('week')} | `{r.get('kind')}` | {r.get('game_id') or '-'} | "
+                  f"{ours} | {theirs} | {r.get('detail') or ''} "
+                  f"([nfl.com]({r.get('nfl_url')})) |")
+            a("")
+        a("Per-game detail, including every comparison, is written to "
+          "`docs/data/official/` and rendered on the Sources page.")
+    a("")
+    a("## 4.2 Official NFL API cross-check")
     a("")
     api = ctx["official_api"]
     if not api.get("configured"):
@@ -771,6 +1013,12 @@ def main(argv=None) -> int:
                         help="cap games written per season (0 = no cap)")
     parser.add_argument("--no-probe-api", dest="probe_api", action="store_false",
                         help="skip the live api.nfl.com probe (it sends no credentials)")
+    parser.add_argument("--no-direct-read", dest="direct_read", action="store_false",
+                        help="skip reading nfl.com's own week page (no credentials "
+                             "involved; this is the direct-from-the-league check)")
+    parser.add_argument("--direct-weeks", type=int, default=2,
+                        help="how many of the most recent weeks to read from nfl.com "
+                             "(default 2: the current week and the one before)")
     parser.add_argument("--crosscheck", action="store_true",
                         help="also query api.nfl.com and diff scores (needs secrets)")
     parser.add_argument("--no-report", action="store_true", help="skip writing the report")
@@ -898,7 +1146,87 @@ def main(argv=None) -> int:
         }
         write_json(os.path.join(args.out, "scoreboard.json"), scoreboard)
 
-    # 3c. refresh the season index so status counts and play-by-play availability
+    # 3c. read nfl.com itself ------------------------------------------------- #
+    #     The charter asks for data straight from the NFL. api.nfl.com is credential-
+    #     gated, so the only unauthenticated league source is the website. Its week
+    #     page carries the league's own score and status for each game; this reads it,
+    #     publishes it as its own artefact under data/official/, and diffs it against
+    #     what we publish. A game the league says is over is marked Final even if our
+    #     clock estimate still had it in progress, and that correction is flagged.
+    official_direct = None
+    if args.direct_read and not args.offline:
+        http_util.log("[3c/5] direct read of nfl.com (no credentials)")
+        try:
+            official_direct = direct_read(
+                current, by_season, args.out, args.direct_weeks,
+                by_season.get(current["season"], []),
+            )
+            http_util.log(
+                f"  official read: weeks={official_direct['weeks_read']} "
+                f"games={official_direct['games_read']} "
+                f"matched={official_direct['score_matches']} "
+                f"mismatched={official_direct['score_mismatches']} "
+                f"unavailable={official_direct['weeks_unavailable']}"
+            )
+            # A status corrected from the league's page must reach the published files,
+            # otherwise the scoreboard would still show "Live (est.)" for a finished game.
+            if official_direct["status_taken_from_official"]:
+                games = by_season[current["season"]]
+                write_json(os.path.join(args.out, "seasons", f"{current['season']}.json"), {
+                    "season": current["season"],
+                    "generated_at": now.isoformat(timespec="seconds").replace("+00:00", "Z"),
+                    "game_count": len(games),
+                    "weeks": weeks_for(games),
+                    "games": games,
+                    "provenance": {
+                        "source_id": "nflverse-schedules",
+                        "upstream_url": sched_url,
+                        "official_review_url": S.nfl_scores_url(),
+                    },
+                })
+                scoreboard = build_scoreboard(by_season, current)
+                scoreboard["generated_at"] = now.isoformat(timespec="seconds").replace(
+                    "+00:00", "Z")
+                scoreboard["provenance"] = {
+                    "source_id": "nflverse-schedules",
+                    "upstream_url": sched_url,
+                    "official_review_url": S.nfl_scores_url(),
+                }
+                write_json(os.path.join(args.out, "scoreboard.json"), scoreboard)
+        except Exception as exc:  # a direct read must never break the feed
+            http_util.warn(f"direct read of nfl.com failed: {exc!r}")
+            official_direct = {
+                "attempted": True,
+                "ok": False,
+                "error": repr(exc)[:300],
+                "note": (
+                    "The direct read of nfl.com raised. The published data is unchanged "
+                    "and remains mirror-derived; nothing was inferred from the failure."
+                ),
+                "weeks_read": 0,
+                "weeks_unavailable": args.direct_weeks,
+                "games_read": 0,
+                "score_matches": 0,
+                "score_mismatches": 0,
+                "status_confirmations": 0,
+                "status_taken_from_official": 0,
+                "documents": [],
+                "errors": [repr(exc)[:300]],
+            }
+    elif args.offline:
+        http_util.log("[3c/5] direct read skipped (offline fixture build)")
+        official_direct = {
+            "attempted": False,
+            "skipped_reason": "offline fixture build: fixtures carry no live nfl.com page",
+            "weeks_read": 0,
+            "games_read": 0,
+            "score_matches": 0,
+            "score_mismatches": 0,
+        }
+    else:
+        http_util.log("[3c/5] direct read skipped (--no-direct-read)")
+
+    # 3d. refresh the season index so status counts and play-by-play availability
     #     reflect what the merge actually wrote: the step-2 index was built before
     #     GAME_END markers could flip any IN_PROGRESS game to FINAL, and before this
     #     run's pbp files existed. Publishing a stale index would understate coverage.
@@ -993,6 +1321,7 @@ def main(argv=None) -> int:
         "fetch_failures": loader.failures,
         "pbp": pbp_stats,
         "official_api": api_status,
+        "official_direct": official_direct,
         "crosschecks": crosschecks,
         "irregularities": irregularities,
         "limitations": build_limitations({
@@ -1002,6 +1331,7 @@ def main(argv=None) -> int:
             "irregularities": irregularities,
             "by_season": by_season,
             "current": current,
+            "official_direct": official_direct,
         }),
         "official_review_url": S.nfl_scores_url(),
         "no_hallucination_policy": (
@@ -1020,6 +1350,7 @@ def main(argv=None) -> int:
             "sources": S.registry_report(),
             "coverage": coverage,
             "official_api": api_status,
+            "official_direct": official_direct,
             "crosschecks": crosschecks,
             "irregularities": irregularities,
         })

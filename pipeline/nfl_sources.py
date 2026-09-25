@@ -37,6 +37,7 @@ need to link every game back to the official NFL page:
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -44,7 +45,7 @@ from typing import Optional
 # Versioning
 # --------------------------------------------------------------------------- #
 
-PIPELINE_VERSION = "1.1.0"
+PIPELINE_VERSION = "1.2.0"
 
 # Earliest season for which NFL play-by-play is available through the verified feed.
 # Verified: nflverse-data release tag `pbp` contains play_by_play_1999.* as its earliest
@@ -369,6 +370,90 @@ _register(
     )
 )
 
+# --- Official NFL Game Book PDF (the league's own game document) ------------- #
+
+# Verified 2026-09-25: the Game Book is served from Cloudinary with a version stamp
+# (.../image/upload/v1789384528/gamecenter/{nfl_api_id}.pdf) AND without one. The
+# version-less form is the one this project constructs, because the stamp is a
+# publish counter we cannot predict. Both were observed serving the same document.
+_register(
+    Source(
+        id="nfl-gamebook",
+        name="Official NFL Game Book PDF (per game)",
+        publisher="National Football League",
+        base_url="https://static.www.nfl.com",
+        url_pattern="https://static.www.nfl.com/image/upload/gamecenter/{nfl_api_id}.pdf",
+        upstream="NFL (direct)",
+        official_chain=(
+            "Direct from the NFL. This is the league's own game summary document - the "
+            "same PDF nfl.com links as 'Download Game Book (PDF)' on every Game Center "
+            "page. It carries the official scoring plays, the official play-by-play "
+            "narrative, final team statistics, final individual statistics, drive "
+            "charts, officials and lineups."
+        ),
+        verification=(
+            "VERIFIED 2026-09-25 by HTTP GET of the version-less URL "
+            "https://static.www.nfl.com/image/upload/gamecenter/"
+            "a9a87603-4feb-11f1-abca-2c54536568a9.pdf - it returned the NFL document "
+            "titled 'National Football League Game Summary', headed 'NFL Copyright (c) "
+            "2026 by The National Football League', for 'Arizona Cardinals at Los "
+            "Angeles Chargers, Sunday, 9/13/2026, at SoFi Stadium, Inglewood, CA', "
+            "listing the quarter line AZ 7/6/3/10 = 26 and LAC 7/0/7/0 = 14, the eight "
+            "official scoring plays, and Final Individual Statistics (ARI: J.Brissett "
+            "27/37, 277 yds, 1 TD, 0 INT, 103.1 rtg; LAC: J.Herbert 17/27, 209 yds, 1 "
+            "TD, 1 INT, 83.7 rtg). Every number matches the record this project "
+            "publishes for 2026_01_ARI_LAC. The nfl_api_id in the URL is the same UUID "
+            "the play-by-play feed reports for that game, so the document is keyed by "
+            "the NFL's own game identifier."
+        ),
+        license_note=(
+            "The PDF states it is 'for the express purpose of assisting media in their "
+            "coverage of the game; any other use of this material is prohibited without "
+            "the written permission of the National Football League.' This project links "
+            "to it for verification and does not redistribute its text."
+        ),
+        human_url="https://www.nfl.com/scores/",
+        tags=("official", "play-by-play", "verification"),
+    )
+)
+
+# --- Official NFL week page (direct league read, no credentials) -------------- #
+_register(
+    Source(
+        id="nfl-week-page",
+        name="Official NFL.com week schedule page (scores as the league publishes them)",
+        publisher="National Football League",
+        base_url="https://www.nfl.com",
+        url_pattern="https://www.nfl.com/schedules/{season}/by-week/{week_slug}",
+        upstream="NFL (direct)",
+        official_chain=(
+            "Direct from the NFL. Server-rendered by nfl.com itself; each game tile "
+            "carries the league's own score and status text alongside the canonical "
+            "/games/ URL."
+        ),
+        verification=(
+            "VERIFIED 2026-09-25 by HTTP GET. "
+            "(a) https://www.nfl.com/schedules/2026/by-week/week-3 returns the official "
+            "week page; TNF tile 'Falcons 35, Packers 14, FINAL, Thursday, September "
+            "24th' linking https://www.nfl.com/games/falcons-at-packers-2026-reg-3, and "
+            "unplayed tiles in the form 'Chargers at Bills, Sunday, September 27th, "
+            "1:00 PM, FOX'. "
+            "(b) https://www.nfl.com/schedules/2025/by-week/week-18 -> 'NFL Week 18 "
+            "Schedule 2025'; tiles such as 'Dolphins 10, Patriots 38, FINAL, Sunday, "
+            "January 4th' and 'Ravens 24, Steelers 26, FINAL, Sunday, January 4th'. "
+            "(c) Week slugs observed on nfl.com's own pagination links: "
+            "'preseason-week-3' (before week-1), 'week-17' -> 'week-18' -> "
+            "'wild-card-weekend'. "
+            "(d) The season selector on the page offers 2010-2026, so pages for older "
+            "seasons may not exist; the pipeline records that as 'not available' rather "
+            "than inventing one."
+        ),
+        license_note="NFL and the NFL shield are registered trademarks of the NFL.",
+        human_url="https://www.nfl.com/schedules/",
+        tags=("official", "live", "direct-read"),
+    )
+)
+
 # --- Non-NFL cross-check (never a primary source) --------------------------- #
 _register(
     Source(
@@ -536,6 +621,90 @@ NFL_COM_GAME_NICK_BY_ERA = {
     "WAS": ((None, 2019, "redskins"), (2020, 2021, "football-team"), (2022, None, "commanders")),
     "WSH": ((None, 2019, "redskins"), (2020, 2021, "football-team"), (2022, None, "commanders")),
 }
+
+
+# The NFL game UUID, e.g. a9a87603-4feb-11f1-abca-2c54536568a9 (36 chars, 8-4-4-4-12 hex).
+# Used as a shape check before any URL is built from an id.
+_NFL_API_ID_RE = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
+
+# Historical club codes that denote the SAME franchise as a current code. nfl.com files a
+# moved club's entire history under its present-day identity, so these are aliases for
+# matching, not guesses: OAK and LV are the Raiders; SD and LAC the Chargers; STL and LA
+# the Rams. Used only to JOIN two records about one franchise - never to rewrite a code.
+FRANCHISE_ALIAS = {
+    "OAK": "LV",
+    "SD": "LAC",
+    "STL": "LA",
+    "SL": "LA",
+    "JAC": "JAX",
+    "WSH": "WAS",
+    "ARZ": "ARI",
+    "PHX": "ARI",
+    "BLT": "BAL",
+    "CLV": "CLE",
+    "HST": "HOU",
+}
+
+
+def franchise_key(abbr: Optional[str]) -> Optional[str]:
+    """Collapse historical club codes onto the current franchise code for matching."""
+    if not abbr:
+        return None
+    key = abbr.upper()
+    return FRANCHISE_ALIAS.get(key, key)
+
+
+# Reverse nickname lookup. nfl.com writes club nicknames on its week pages
+# ("Falcons", "Packers", "49ers"), so parsing them needs nick -> abbreviation.
+# Where two codes share a nickname the CURRENT code wins, and FRANCHISE_ALIAS above
+# resolves the historical one during matching.
+NICK_TO_ABBR = {
+    "cardinals": "ARI",
+    "falcons": "ATL",
+    "ravens": "BAL",
+    "bills": "BUF",
+    "panthers": "CAR",
+    "bears": "CHI",
+    "bengals": "CIN",
+    "browns": "CLE",
+    "cowboys": "DAL",
+    "broncos": "DEN",
+    "lions": "DET",
+    "packers": "GB",
+    "texans": "HOU",
+    "colts": "IND",
+    "jaguars": "JAX",
+    "chiefs": "KC",
+    "raiders": "LV",
+    "chargers": "LAC",
+    "rams": "LA",
+    "dolphins": "MIA",
+    "vikings": "MIN",
+    "patriots": "NE",
+    "saints": "NO",
+    "giants": "NYG",
+    "jets": "NYJ",
+    "eagles": "PHI",
+    "steelers": "PIT",
+    "49ers": "SF",
+    "seahawks": "SEA",
+    "buccaneers": "TB",
+    "titans": "TEN",
+    "commanders": "WAS",
+    # Nicknames nfl.com uses for games played under an old club name. The slug keeps the
+    # era nickname, so a parser has to recognise it; the code is the franchise's today.
+    "redskins": "WAS",
+    "football-team": "WAS",
+}
+
+
+def abbr_for_nick(nick: Optional[str]) -> Optional[str]:
+    """Club abbreviation for an nfl.com nickname, or None when unrecognised."""
+    if not nick:
+        return None
+    return NICK_TO_ABBR.get(nick.strip().lower())
 
 
 def nfl_com_game_nick(abbr: Optional[str], season: Optional[int]) -> Optional[str]:
@@ -728,6 +897,85 @@ def nfl_team_url(abbr: Optional[str]) -> Optional[str]:
     if not city:
         return None
     return f"https://www.nfl.com/teams/{city}-{nick}"
+
+
+def nfl_gamebook_url(nfl_api_id: Optional[str]) -> Optional[str]:
+    """Official NFL Game Book PDF for a game, or None when we have no NFL game UUID.
+
+    Built from the version-less Cloudinary pattern, which was confirmed to serve the
+    league's own document on 2026-09-25 (see the ``nfl-gamebook`` registry entry).
+    Returns None rather than guessing: a wrong UUID would produce a broken link, and a
+    fabricated one is worse than no link at all (PROJECT_PROMPT R2).
+    """
+    if not nfl_api_id:
+        return None
+    api_id = str(nfl_api_id).strip()
+    # The NFL game UUID is 36 characters: 8-4-4-4-12 hex. Anything else is not an
+    # NFL API id and must not be turned into a URL.
+    if not _NFL_API_ID_RE.match(api_id):
+        return None
+    return get("nfl-gamebook").url(nfl_api_id=api_id)
+
+
+_WEEK_SLUGS = {
+    "REG": "week-{week}",
+    "PRE": "preseason-week-{week}",
+}
+
+# The earliest season for which nfl.com itself offers a week page.
+#
+# Verified 2026-09-25: the season selector rendered by nfl.com on both
+# https://www.nfl.com/scores and https://www.nfl.com/schedules lists exactly
+# 2010, 2011, ... 2026 - it does not offer 1999-2009. Our archive starts in 1999, so a
+# week page URL must NOT be constructed for the earlier seasons: it would 404, and a
+# link that is known to be dead is worse than no link (PROJECT_PROMPT R2/R3).
+#
+# This is a guard against emitting links, not a claim about where the archive ends.
+NFL_WEEK_PAGE_MIN_SEASON = 2010
+
+
+def nfl_week_slug(season_type: Optional[str], week: Optional[int]) -> Optional[str]:
+    """nfl.com's own week slug, or None when the pattern is not verified.
+
+    ``preseason-week-{n}`` and ``week-{n}`` were read off nfl.com's own pagination
+    links on 2026-09-25. Postseason slugs are NOT asserted here - they are discovered
+    at runtime by following the website's own 'next week' link, and recorded as
+    'unavailable' when the site does not offer one (PROJECT_PROMPT R2: no guessing).
+    """
+    if week is None:
+        return None
+    try:
+        wk = int(week)
+    except (TypeError, ValueError):
+        return None
+    pattern = _WEEK_SLUGS.get(str(season_type or "").upper())
+    if not pattern:
+        return None
+    return pattern.format(week=wk)
+
+
+def nfl_week_url(season: Optional[int], season_type: Optional[str],
+                 week: Optional[int]) -> Optional[str]:
+    """Official nfl.com week-schedule page for one week, or None if there isn't one.
+
+    Returns None when the slug is not a verified pattern, when the season is before the
+    earliest season nfl.com publishes a week page for, or when the arguments are missing
+    - never a URL that is known to be dead.
+    """
+    slug = nfl_week_slug(season_type, week)
+    if not slug or season is None:
+        return None
+    try:
+        yr = int(season)
+    except (TypeError, ValueError):
+        return None
+    if yr < NFL_WEEK_PAGE_MIN_SEASON:
+        return None
+    return get("nfl-week-page").url(season=yr, week_slug=slug)
+
+
+def nfl_schedules_url() -> str:
+    return "https://www.nfl.com/schedules/"
 
 
 def nfl_standings_url() -> str:
