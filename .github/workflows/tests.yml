@@ -121,16 +121,35 @@ jobs:
 
           check = crosscheck_week(official, ours)
           print(json.dumps({k: v for k, v in check.items() if k != 'rows'}, indent=2))
-          # A score disagreement between nfl.com and the published data is a real
-          # finding: fail loudly so a human looks at it rather than shipping it.
+
+          problems = []
+          # A score disagreement between nfl.com and the published data is a real finding:
+          # fail loudly so a human looks at it rather than shipping it.
           if check['mismatched']:
-              print("::error::nfl.com disagrees with the published scores:")
-              for row in check['rows']:
-                  print("  ", row)
-              sys.exit(1)
-          # And the reader must actually have compared something, or it proved nothing.
+              problems.append(f"nfl.com disagrees with {check['mismatched']} published score(s)")
+          # A club name nfl.com printed that we cannot resolve means the label was read
+          # wrong (this is how "Watch Replay, Falcons" was caught) or a club was renamed.
+          if check['unrecognised_club_names']:
+              problems.append(
+                  f"{check['unrecognised_club_names']} club name(s) nfl.com printed could "
+                  f"not be resolved to an abbreviation")
+          # The reader must have actually looked at something, or it proved nothing.
           if check['comparable'] < 1 and check['official_no_score'] < 1:
-              print("::error::Nothing was compared; the check proved nothing.")
+              problems.append("nothing was compared; the check proved nothing")
+          # Degenerate readings are a parse failure, not a quiet success.
+          if official['parse'].get('games_parsed', 0) < 1:
+              problems.append("the reader parsed no games at all")
+          # If every game came from the weakest strategy, the label parse has regressed.
+          if official['parse'].get('markup_heuristic_used', 0) and \
+                  not official['parse'].get('aria_labels_seen', 0):
+              problems.append("no accessible label was read; only markup guessing was used")
+
+          for row in check['rows']:
+              print("  ", row)
+          if problems:
+              print("::error::Direct nfl.com read failed its checks:")
+              for p in problems:
+                  print("  - " + p)
               sys.exit(1)
           print("DIRECT NFL READ OK")
           PY

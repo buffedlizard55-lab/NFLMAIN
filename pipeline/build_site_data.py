@@ -384,6 +384,11 @@ def load_pbp_for_season(loader: Loader, season: int, games: list, out_dir: str,
         stat["derived"][gid] = {
             "quarter_scores": doc.get("quarter_scores"),
             "pbp_available": True,
+            # The NFL API game UUID the play-by-play feed reports, which is what keys the
+            # league's Game Book PDF. Carried out of the per-game document so the season
+            # record can gain the identifier and the direct link to the official PDF.
+            "nfl_api_id": (doc.get("ids") or {}).get("nfl_api_id"),
+            "nfl_gamebook": (doc.get("links") or {}).get("nfl_gamebook"),
             "pbp_play_count": pbp_meta.get("play_count"),
             "pbp_scoring_plays": pbp_meta.get("scoring_play_count"),
             "game_end_marker_seen": pbp_meta.get("game_end_marker_seen"),
@@ -434,6 +439,9 @@ def direct_read(current: dict, by_season: dict, out_dir: str, weeks_back: int,
         "status_taken_from_official": 0,
         "official_only": 0,
         "mirror_only": 0,
+        "listed_not_yet_played": 0,
+        "official_unmatched": 0,
+        "unrecognised_club_names": 0,
         "disagreements": [],
         "read_at": utcnow().isoformat(timespec="seconds").replace("+00:00", "Z"),
         "documents": [],
@@ -496,6 +504,9 @@ def direct_read(current: dict, by_season: dict, out_dir: str, weeks_back: int,
             summary["status_taken_from_official"] += check["status_disagreements"]
             summary["official_only"] += check["official_only"]
             summary["mirror_only"] += check["mirror_only"]
+            summary["listed_not_yet_played"] += check.get("listed_not_yet_played", 0)
+            summary["official_unmatched"] += check.get("official_unmatched", 0)
+            summary["unrecognised_club_names"] += check.get("unrecognised_club_names", 0)
             for row in check.get("rows") or []:
                 summary["disagreements"].append({"week": wk, **row})
         else:
@@ -518,6 +529,66 @@ def _method_counts(games: list) -> dict:
         key = g.get("method") or "unknown"
         counts[key] = counts.get(key, 0) + 1
     return counts
+
+
+def build_data_caveats(by_season: dict) -> list:
+    """Corrections and gotchas about the upstream feeds, with the evidence.
+
+    These are not faults in a single record. They are things about the data that a future
+    session - or a reader - would otherwise get wrong. Every number below is computed
+    from what this build actually holds, so none of them can go stale.
+    """
+    total = 0
+    with_detail_id = 0
+    with_api_id = 0
+    with_gamebook = 0
+    for games in by_season.values():
+        for g in games:
+            total += 1
+            ids = g.get("ids") or {}
+            if ids.get("nfl_detail_id"):
+                with_detail_id += 1
+            if ids.get("nfl_api_id"):
+                with_api_id += 1
+            if (g.get("links") or {}).get("nfl_gamebook"):
+                with_gamebook += 1
+
+    return [
+        {
+            "id": "nfl-detail-id-is-not-the-game-uuid",
+            "title": "The schedule feed's `nfl_detail_id` is NOT the NFL API game UUID",
+            "detail": (
+                "The two feeds carry different identifier families and must not be used "
+                "interchangeably. `nfl_detail_id` does not key the league's Game Book "
+                "PDF, so this project never builds a URL from it. Proved on two 2021 "
+                "games fetched from nfl.com: 2021_01_DAL_TB reports nfl_detail_id "
+                "10160000-0585-0395-7f87-0c3334b38e2e while the official page links the "
+                "Game Book c5722300-b37c-11eb-9617-afa9727fab42.pdf, and 2021_01_JAX_HOU "
+                "reports 10160000-0585-0955-6419-0435c7f11d5d while its page links "
+                "c59f20b4-b37c-11eb-b268-91616e0aa8ce.pdf. The Game Book URL built from "
+                "a 2021 nfl_detail_id was confirmed NOT to serve a PDF. By contrast the "
+                "play-by-play feed's own `nfl_api_id` DOES key it: 2026_01_ARI_LAC "
+                "reports a9a87603-4feb-11f1-abca-2c54536568a9, which is exactly the PDF "
+                "its Game Center page links."
+            ),
+            "evidence": [
+                "https://www.nfl.com/games/cowboys-at-buccaneers-2021-reg-1",
+                "https://www.nfl.com/games/jaguars-at-texans-2021-reg-1",
+                "https://www.nfl.com/games/cardinals-at-chargers-2026-reg-1",
+            ],
+            "measured": {
+                "games_in_archive": total,
+                "games_carrying_a_detail_id": with_detail_id,
+                "games_with_a_trusted_nfl_api_uuid": with_api_id,
+                "games_with_an_official_gamebook_link": with_gamebook,
+            },
+            "effect_on_site": (
+                "`ids.nfl_api_id` is filled only from the play-by-play feed. Games without "
+                "it show no Game Book link rather than a broken one, and the game page "
+                "says why."
+            ),
+        },
+    ]
 
 
 # --------------------------------------------------------------------------- #
@@ -785,11 +856,15 @@ def render_report(ctx: dict) -> str:
         a(
             f"**Run.** {direct.get('weeks_read', 0)} week page(s) read, "
             f"{direct.get('games_read', 0)} game(s) seen, "
-            f"{direct.get('games_compared', 0)} comparable, "
+            f"{direct.get('games_compared', 0)} comparable "
+            f"({direct.get('listed_not_yet_played', 0)} listed but not yet played), "
             f"**{direct.get('score_matches', 0)} score(s) matched**, "
             f"**{direct.get('score_mismatches', 0)} disagreed**, "
-            f"{direct.get('weeks_unavailable', 0)} week page(s) unavailable. "
-            f"Read at {direct.get('read_at')}."
+            f"{direct.get('weeks_unavailable', 0)} week page(s) unavailable, "
+            f"{direct.get('official_unmatched', 0)} game(s) listed by nfl.com that this "
+            f"build has no record of, "
+            f"{direct.get('unrecognised_club_names', 0)} club name(s) nfl.com printed "
+            f"that this project does not recognise. Read at {direct.get('read_at')}."
         )
         a("")
         a("These requests were made by this build, with no credentials, to the league's "
@@ -879,6 +954,30 @@ def render_report(ctx: dict) -> str:
                 a(f"* body excerpt from `{pr.get('name')}`: "
                   f"`{pr['body_excerpt'][:160].replace(chr(10), ' ')}`")
     a("")
+    a("## 4.9 Data caveats: corrections to what the upstream feeds mean")
+    a("")
+    a("These are not faults in a single record. They are things about the upstream data "
+      "that a reader would otherwise get wrong, each with the evidence that established "
+      "it and the numbers this build measured.")
+    a("")
+    for cav in ctx.get("data_caveats") or []:
+        a(f"### {cav.get('title')}")
+        a("")
+        a(f"{cav.get('detail')}")
+        a("")
+        measured = cav.get("measured") or {}
+        if measured:
+            a("| Measured in this build | |")
+            a("|---|---|")
+            for k, v in measured.items():
+                a(f"| `{k}` | {v:,} |" if isinstance(v, int) else f"| `{k}` | {v} |")
+            a("")
+        if cav.get("evidence"):
+            a("Evidence: " + " · ".join(f"<{u}>" for u in cav["evidence"]))
+            a("")
+        if cav.get("effect_on_site"):
+            a(f"Effect on the site: {cav['effect_on_site']}")
+            a("")
     a("## 5. Irregularities flagged for review")
     a("")
     irr = ctx["irregularities"]
@@ -931,6 +1030,23 @@ def render_report(ctx: dict) -> str:
         a("| `missing-nfl-gsis-old-game-id` | No NFL GSIS 10-digit id, so the record "
           "cannot be linked to an official NFL identifier. | Expected for some preseason "
           "games. |")
+        a("| `pbp-built-without-nfl-api-id` | A game has a full play-by-play feed but the feed published no NFL API game UUID, so the league's Game Book PDF cannot be addressed. | Rare and actionable: report it. Older seasons where the id simply does not exist upstream are NOT flagged, because 5,000 identical flags would hide the ones that matter. |")
+        a("| `nfl-api-id-not-in-game-uuid-shape` | The identifier in the feed is not in the NFL game UUID shape, so no URL is built from it. | Inspect the feed; a fabricated link is worse than no link. |")
+        a("| `nfl-detail-id-differs-from-pbp-game-uuid` | The schedule feed's `nfl_detail_id` and the play-by-play feed's `nfl_api_id` name the same game differently. | Expected: they are different identifier families. Recorded so nobody assumes they are interchangeable. |")
+        a("| ~~`missing-nfl-api-id`~~ | Retired in pipeline 1.2.0: it fired on every pre-2021 game, which is a property of the feed rather than a fault, and it buried the flags that matter. The schedule identifier's real problem is documented as a data caveat in section 4.9. | No action. |"
+          "this game, so the league's Game Book PDF - which is keyed by that UUID - cannot "
+          "be addressed and the game page shows no such link. | Expected for older seasons "
+          "and some preseason games: the identifier is a modern NFL API field. The "
+          "play-by-play feed often carries it even when the schedule feed does not, in "
+          "which case the link is rebuilt from there. |")
+        a("| `status-taken-from-nfl-com` | This project's clock-based status estimate was "
+          "overridden by the status nfl.com itself published on its week page. | None - "
+          "this is the direct-from-the-league correction working. The official status "
+          "beats our estimate, and the record says which one it used. |")
+        a("| `official-score-disagrees-with-mirror` | nfl.com's own week page publishes a "
+          "different score from the one in this archive. | Check the official Game Book "
+          "PDF linked on the game page. Until it is reconciled, treat that game as "
+          "unverified. |")
         a("| `pbp-*-disagrees-with-schedule` | The play-by-play running score does not end "
           "at the scheduled final score. | Treat the game as suspect until reconciled. |")
         a("| `quarter-line-*-disagrees-with-schedule` | The per-quarter line derived from "
@@ -1110,6 +1226,21 @@ def main(argv=None) -> int:
                 continue
             g["quarter_scores"] = extra.get("quarter_scores")
             g["pbp_available"] = True
+            # The play-by-play feed supplies the NFL API game UUID for games where the
+            # schedule feed does not, so the published record picks it up here - along
+            # with the Game Book link that identifier unlocks. Without this step a game
+            # with a full play-by-play feed would still offer no route to the league's
+            # own document.
+            api_id = extra.get("nfl_api_id")
+            if api_id:
+                g.setdefault("ids", {})["nfl_api_id"] = api_id
+                book = extra.get("nfl_gamebook")
+                if book:
+                    g.setdefault("links", {})["nfl_gamebook"] = book
+                g["irregularities"] = [
+                    i for i in (g.get("irregularities") or [])
+                    if i != "pbp-built-without-nfl-api-id"
+                ]
             g["pbp_play_count"] = extra.get("pbp_play_count")
             g["pbp_scoring_plays"] = extra.get("pbp_scoring_plays")
             # An official GAME_END play is authoritative: it overrides a clock estimate.
@@ -1322,6 +1453,7 @@ def main(argv=None) -> int:
         "pbp": pbp_stats,
         "official_api": api_status,
         "official_direct": official_direct,
+        "data_caveats": build_data_caveats(by_season),
         "crosschecks": crosschecks,
         "irregularities": irregularities,
         "limitations": build_limitations({
@@ -1351,6 +1483,7 @@ def main(argv=None) -> int:
             "coverage": coverage,
             "official_api": api_status,
             "official_direct": official_direct,
+            "data_caveats": build_data_caveats(by_season),
             "crosschecks": crosschecks,
             "irregularities": irregularities,
         })

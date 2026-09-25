@@ -52,6 +52,44 @@ _ANCHOR_RE = re.compile(
 )
 _ARIA_RE = re.compile(r"aria-label=\"(?P<label>[^\"]*)\"", re.IGNORECASE)
 
+# The canonical game slug itself: {away-nick}-at-{home-nick}-{season}-{type}-{week}.
+#
+# This pass exists because the anchor pass is NOT sufficient, and the gap was only found
+# by reading a real run rather than trusting the code. On the 2026 week-3 page nfl.com
+# renders the international game (Ravens at Cowboys, Rio de Janeiro) in a different
+# template that the anchor pass did not pick up, so the page's own slate was one game
+# short and the comparison never looked at it. Any game the league lists but this reader
+# misses would have been silently reported as "no disagreement".
+_GAME_SLUG_RE = re.compile(
+    r"/games/(?P<slug>[a-z0-9]+(?:-[a-z0-9]+)*-at-[a-z0-9]+(?:-[a-z0-9]+)*"
+    r"-(?P<season>\d{4})-(?P<season_type>reg|post|pre)-(?P<week>\d{1,2}))",
+    re.IGNORECASE,
+)
+
+# Accessible names nfl.com puts on the buttons and links around a game tile. They are
+# real labels, and some of them even carry the score ("Watch Replay, Falcons 35, Packers
+# 14, ..."), which is exactly why they must be stripped rather than parsed: without this
+# the "away team" of the 2026 week-3 Thursday game came out as "Watch Replay, Falcons".
+# Every entry below was observed in the markup or in a real pipeline run on 2026-09-25.
+_UI_PREFIXES = (
+    "watch replay",
+    "watch highlights",
+    "watch preview",
+    "watch live",
+    "explore game",
+    "view game",
+    "tickets",
+    "replay",
+    "watch",
+    "listen",
+    "highlights",
+)
+_UI_SUFFIXES = (
+    ". opens in a new tab",
+    "opens in a new tab",
+    ". opens a new window",
+)
+
 # "Dolphins 10, Patriots 38, FINAL, Sunday, January 4th"
 _PLAYED_RE = re.compile(
     r"^(?P<away>.+?)\s+(?P<away_score>\d+)\s*,\s*"
@@ -117,9 +155,44 @@ def classify_status(status_text: Optional[str], has_score: bool) -> str:
     return "UNKNOWN" if not has_score else "UNKNOWN"
 
 
+def strip_ui_chrome(label: Optional[str]) -> Optional[str]:
+    """Remove the button/control wording nfl.com wraps a game label in.
+
+    Only the exact prefixes and suffixes observed on the live site are removed, and only
+    from the front/back of the string, so a club whose name happens to contain a word
+    like "watch" is not touched mid-label. Returns None when nothing is left, so a label
+    that was pure chrome cannot be mistaken for a game.
+    """
+    text = _clean(label)
+    if not text:
+        return None
+    changed = True
+    while changed:
+        changed = False
+        lowered = text.lower()
+        for prefix in _UI_PREFIXES:
+            if lowered.startswith(prefix):
+                rest = text[len(prefix):].lstrip(" ,:\\u2013-")
+                if rest and rest != text:
+                    text = rest
+                    changed = True
+                    lowered = text.lower()
+                break
+        for suffix in _UI_SUFFIXES:
+            if text.lower().endswith(suffix):
+                text = text[: -len(suffix)].rstrip(" ,;")
+                changed = True
+                break
+    return _clean(text)
+
+
+def _nick_is_known(nick: Optional[str]) -> bool:
+    return S.abbr_for_nick(nick) is not None
+
+
 def _parse_label(label: str) -> Optional[dict]:
     """Parse one nfl.com game label into scores + status, or None if unreadable."""
-    text = _clean(label)
+    text = strip_ui_chrome(label)
     if not text:
         return None
 
@@ -149,85 +222,180 @@ def _parse_label(label: str) -> Optional[dict]:
     return None
 
 
+def _candidate_score(parsed: dict) -> tuple:
+    """Rank an interpretation of a label. Higher is better.
+
+    A label that names two real clubs AND states a status is better than one that only
+    names the clubs, which is better than one that does neither. This is what makes the
+    reader prefer "Falcons 35, Packers 14, FINAL, Thursday, September 24th" over the
+    "Watch Replay, Falcons 35, Packers 14, Thursday, September 24th" control that sits
+    next to it in the same tile.
+    """
+    known_nicks = int(_nick_is_known(parsed.get("away_nick"))) + \
+        int(_nick_is_known(parsed.get("home_nick")))
+    status = classify_status(parsed.get("status_text"),
+                             parsed.get("away_score") is not None)
+    status_known = int(status in ("FINAL", "IN_PROGRESS", "POSTPONED"))
+    has_score = int(parsed.get("away_score") is not None)
+    return (known_nicks, status_known, has_score)
+
+
+def _collect_labels(raw: str, start: int, end: int) -> list:
+    """Every aria-label in the markup window, with its label text."""
+    return [m.group("label") for m in _ARIA_RE.finditer(raw[start:end])]
+
+
+def _as_parsed(record: dict) -> dict:
+    """View an already-recorded game as something _candidate_score can rank."""
+    return {
+        "away_nick": record.get("away_nick"),
+        "home_nick": record.get("home_nick"),
+        "away_score": record.get("away_score"),
+        "status_text": record.get("status_text"),
+    }
+
+
 def parse_week_html(raw: str, *, source_url: str = "") -> dict:
     """Extract the games nfl.com publishes on a week page.
+
+    Two passes, because one is provably not enough (see ``_GAME_SLUG_RE``):
+
+    1. Every ``<a>`` whose href points at a game page, paired with the best parsable
+       aria-label in the surrounding markup.
+    2. Every canonical ``/games/{away}-at-{home}-{season}-{type}-{week}`` slug anywhere
+       in the page, including the templates the anchor pass does not handle. This means a
+       game the league lists cannot quietly fall out of the comparison.
 
     Returns ``{"games": [...], "parse": {...}}``. Never raises: an unreadable page is
     reported, not guessed at.
     """
     games: list = []
-    seen: set = set()
+    seen: dict = {}
+    position: dict = {}
     anchors = 0
     labels_seen = 0
     heuristic_used = 0
+    slug_scan_added = 0
+    skipped_not_game = 0
 
+    def _record(slug: str, href: Optional[str], parsed: Optional[dict], method: str):
+        has_score = bool(parsed) and parsed.get("away_score") is not None and \
+            parsed.get("home_score") is not None
+        nick_a = (parsed or {}).get("away_nick")
+        nick_h = (parsed or {}).get("home_nick")
+        url = href if (href or "").startswith("http") else "https://www.nfl.com" + (href or slug)
+        return {
+            "url": url,
+            "slug": slug,
+            "away_nick": nick_a,
+            "home_nick": nick_h,
+            # A nickname is only turned into a club code when it is recognised. An
+            # unrecognised label leaves the abbreviation null rather than guessing.
+            "away_abbr": S.abbr_for_nick(nick_a),
+            "home_abbr": S.abbr_for_nick(nick_h),
+            "away_score": (parsed or {}).get("away_score"),
+            "home_score": (parsed or {}).get("home_score"),
+            "status_text": (parsed or {}).get("status_text"),
+            "status": classify_status((parsed or {}).get("status_text"), has_score),
+            "kickoff_text": (parsed or {}).get("kickoff_text"),
+            "label": _clean((parsed or {}).get("label")),
+            "method": method,
+        }
+
+    # ---- pass 1: anchors -------------------------------------------------- #
     for match in _ANCHOR_RE.finditer(raw or ""):
         anchors += 1
         href = match.group("href")
-        tag = match.group(0)
         slug = normalise_game_url(href)
-        if not slug or slug in seen:
+        if not slug:
             continue
 
-        label_match = _ARIA_RE.search(tag)
-        parsed = None
-        method = None
-        if label_match:
+        # Gather every label near this game link and take the most informative one. The
+        # previous revision took the FIRST label it found, which is how a "Watch Replay"
+        # control ended up being reported as the away team.
+        window_start = match.start()
+        window_end = match.start() + 4000
+        candidates = []
+        own = _ARIA_RE.search(match.group(0))
+        if own:
             labels_seen += 1
-            parsed = _parse_label(label_match.group("label"))
-            method = "anchor-aria-label"
+            candidates.append(own.group("label"))
+        for label in _collect_labels(raw or "", match.end(), window_end):
+            labels_seen += 1
+            candidates.append(label)
 
-        if parsed is None:
-            # Fallback: look for a label in the markup that FOLLOWS the game link
-            # (React sometimes renders the accessible name on an inner element).
-            window = raw[match.end(): match.end() + 4000]
-            for candidate in _ARIA_RE.finditer(window):
-                labels_seen += 1
-                parsed = _parse_label(candidate.group("label"))
-                if parsed:
-                    method = "nearby-aria-label"
-                    break
+        best = None
+        best_score = None
+        for label in candidates:
+            parsed = _parse_label(label)
+            if not parsed:
+                continue
+            score = _candidate_score(parsed)
+            if best_score is None or score > best_score:
+                best, best_score = parsed, score
+        method = "aria-label" if best else None
 
-        if parsed is None:
+        if best is None:
             # Last resort: score-markup heuristic. Deliberately conservative - it only
             # fires when two score-looking elements sit next to the game link, and the
             # result is tagged so the audit trail shows it was inferred from markup.
-            window = raw[match.end(): match.end() + 3000]
+            window = (raw or "")[match.end(): match.end() + 3000]
             scores = [int(m.group("score")) for m in _SCORE_SPAN_RE.finditer(window)]
             if len(scores) >= 2:
-                parsed = {
-                    "away_nick": None,
-                    "away_score": scores[0],
-                    "home_nick": None,
-                    "home_score": scores[1],
-                    "status_text": None,
-                    "kickoff_text": None,
-                    "label": None,
+                best = {
+                    "away_nick": None, "away_score": scores[0],
+                    "home_nick": None, "home_score": scores[1],
+                    "status_text": None, "kickoff_text": None, "label": None,
                 }
                 method = "markup-heuristic"
                 heuristic_used += 1
 
-        if parsed is None:
+        # A /games/ link that is neither a canonical game slug nor a label naming two
+        # real clubs is not a game - nfl.com has other /games/ routes. It is counted and
+        # skipped rather than turned into a record full of nulls, which would inflate the
+        # slate and make the comparison look more thorough than it was.
+        canonical = bool(_GAME_SLUG_RE.match(slug))
+        named_two_clubs = bool(best) and _nick_is_known(best.get("away_nick")) and \
+            _nick_is_known(best.get("home_nick"))
+        if not canonical and not named_two_clubs:
+            skipped_not_game += 1
             continue
 
-        has_score = parsed["away_score"] is not None and parsed["home_score"] is not None
-        record = {
-            "url": (href if href.startswith("http") else "https://www.nfl.com" + href),
-            "slug": slug,
-            "away_nick": parsed["away_nick"],
-            "home_nick": parsed["home_nick"],
-            "away_abbr": S.abbr_for_nick(parsed["away_nick"]),
-            "home_abbr": S.abbr_for_nick(parsed["home_nick"]),
-            "away_score": parsed["away_score"],
-            "home_score": parsed["home_score"],
-            "status_text": parsed["status_text"],
-            "status": classify_status(parsed["status_text"], has_score),
-            "kickoff_text": parsed["kickoff_text"],
-            "label": _clean(parsed["label"]),
-            "method": method,
-        }
-        seen.add(slug)
+        record = _record(slug, href, best, method or "link-without-a-label")
+        if slug in seen:
+            # The same game is linked more than once per page (the tile and its
+            # "Explore Game" control). Keep whichever reading carries more information.
+            if _candidate_score(best or {}) > _candidate_score(_as_parsed(seen[slug])):
+                seen[slug] = record
+                games[position[slug]] = record
+            continue
+        seen[slug] = record
+        position[slug] = len(games)
         games.append(record)
+
+    # ---- pass 2: canonical slugs anywhere in the page --------------------- #
+    for match in _GAME_SLUG_RE.finditer(raw or ""):
+        slug = normalise_game_url("/games/" + match.group("slug"))
+        if not slug or slug in seen:
+            continue
+        # Try to attach a label from the surrounding markup; if there is none the game is
+        # still reported, with null scores, rather than dropped.
+        candidates = _collect_labels(raw or "",
+                                     max(0, match.start() - 2000),
+                                     match.start() + 2000)
+        best, best_score = None, None
+        for label in candidates:
+            labels_seen += 1
+            parsed = _parse_label(label)
+            if not parsed:
+                continue
+            score = _candidate_score(parsed)
+            if best_score is None or score > best_score:
+                best, best_score = parsed, score
+        record = _record(slug, slug, best, "slug-scan")
+        seen[slug] = record
+        games.append(record)
+        slug_scan_added += 1
 
     return {
         "games": games,
@@ -236,6 +404,8 @@ def parse_week_html(raw: str, *, source_url: str = "") -> dict:
             "game_anchors": anchors,
             "unique_game_links": len(seen),
             "games_parsed": len(games),
+            "games_found_by_slug_scan": slug_scan_added,
+            "links_skipped_not_game_like": skipped_not_game,
             "aria_labels_seen": labels_seen,
             "markup_heuristic_used": heuristic_used,
         },
@@ -378,6 +548,9 @@ def crosscheck_week(official: dict, games: list) -> dict:
         "official_only": 0,
         "mirror_only": 0,
         "official_no_score": 0,
+        "listed_not_yet_played": 0,
+        "official_unmatched": 0,
+        "unrecognised_club_names": 0,
         "status_confirmations": 0,
         "status_disagreements": 0,
         "comparable": 0,
@@ -385,6 +558,14 @@ def crosscheck_week(official: dict, games: list) -> dict:
         "parse": official.get("parse") or {},
     }
     if not out["ok"] or not games:
+        # Nothing was compared, and the reason is recorded rather than left as a row of
+        # zeroes that could be misread as "the two agreed".
+        out["skipped_reason"] = (
+            "the nfl.com read did not succeed, so there was nothing to compare"
+            if not out["ok"] else
+            "this build has no games recorded for that week, so there was nothing to "
+            "compare"
+        )
         return out
 
     by_key = {}
@@ -398,9 +579,32 @@ def crosscheck_week(official: dict, games: list) -> dict:
     used: set = set()
     for off in official["games"]:
         key = _match_key(off.get("url"), off.get("away_abbr"), off.get("home_abbr"))
+        # A club name nfl.com printed that this project does not recognise means the
+        # label was read wrong or a club was renamed. Either way it must be visible.
+        for side in ("away", "home"):
+            nick = off.get(f"{side}_nick")
+            if nick and not off.get(f"{side}_abbr"):
+                out["unrecognised_club_names"] += 1
+                out["rows"].append({
+                    "kind": "unrecognised-club-name",
+                    "game_id": None,
+                    "nfl_url": off.get("url"),
+                    "official": nick,
+                    "ours": None,
+                    "official_status": off.get("status"),
+                    "our_status": None,
+                    "detail": (
+                        f"nfl.com printed the club name {nick!r} for the {side} side and it "
+                        "is not in this project's club table, so no abbreviation was "
+                        "assigned. Update the mapping deliberately - do not guess."
+                    ),
+                })
+
         ours = by_url.get(key[0]) or by_key.get((key[1], key[2]))
         if not ours:
             out["official_only"] += 1
+            if off.get("away_score") is None and off.get("home_score") is None:
+                out["official_unmatched"] += 1
             out["rows"].append({
                 "kind": "official-only",
                 "game_id": None,
@@ -420,6 +624,11 @@ def crosscheck_week(official: dict, games: list) -> dict:
 
         if off_away is None or off_home is None:
             out["official_no_score"] += 1
+            if away_score is None and home_score is None:
+                # Both sides list the game and neither publishes a score yet: it has not
+                # been played. Counted so the report distinguishes "not yet played" from
+                # "not checked".
+                out["listed_not_yet_played"] += 1
             continue
         if away_score is None or home_score is None:
             # We have no score yet (game not started upstream). Not a disagreement.
@@ -430,6 +639,12 @@ def crosscheck_week(official: dict, games: list) -> dict:
             out["matched"] += 1
         else:
             out["mismatched"] += 1
+            # Put the disagreement on the game record too, so it shows up wherever the
+            # game is rendered (scoreboard card, archive, game page) and in the manifest's
+            # irregularity list - not only in this artefact.
+            issues = ours.setdefault("irregularities", [])
+            if "official-score-disagrees-with-mirror" not in issues:
+                issues.append("official-score-disagrees-with-mirror")
             out["rows"].append({
                 "kind": "score-mismatch",
                 "game_id": ours.get("game_id"),

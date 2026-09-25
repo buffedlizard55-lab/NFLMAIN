@@ -172,8 +172,17 @@
     var linkBox = N.el("div", { style: "display:flex;flex-wrap:wrap;gap:6px;margin-top:8px" });
     [
       [links.nfl_game, "NFL.com Game Center", true],
+      // The league's own game summary document, served unauthenticated at a
+      // version-less URL that was verified on 2026-09-25. It is the strongest
+      // "check this yourself" affordance on the page: scoring plays, drive charts and
+      // final individual statistics, straight from the NFL. Only rendered when the
+      // NFL API game UUID is known, because the PDF is keyed by that UUID.
+      [links.nfl_gamebook, "Official Game Book (PDF)", true],
+      [links.nfl_week, "NFL.com week page", false],
       [links.nfl_scores, "NFL.com scoreboard", false],
-      [links.nfl_standings, "NFL.com standings", false]
+      [links.nfl_standings, "NFL.com standings", false],
+      [links.nfl_team_away, "Away club page", false],
+      [links.nfl_team_home, "Home club page", false]
     ].forEach(function (l) {
       var node = N.nflLink(l[0], l[1], { primary: l[2], linkCheck: state.linkCheck });
       if (node) linkBox.appendChild(node);
@@ -185,9 +194,11 @@
         N.el("h3", { text: "Official identifiers & links" }),
         idsDl,
         N.el("p", { class: "card__meta", style: "margin:10px 0 0" }, [
-          "These are the NFL's own identifiers for this game. Use the Game Center link to " +
-          "compare any figure on this page against the official NFL record, including the " +
-          "league's Game Book PDF."
+          "These are the NFL's own identifiers for this game. Use the Game Center link, or " +
+          "the Game Book PDF the league publishes for it" +
+          (links.nfl_gamebook ? "" : " (not linked here: the NFL API game UUID is not " +
+            "published upstream for this game, so the PDF's address cannot be built)") +
+          ", to compare any figure on this page against the official NFL record."
         ]),
         linkBox
       ])

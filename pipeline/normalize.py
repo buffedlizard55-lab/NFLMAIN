@@ -22,6 +22,7 @@ from typing import Iterable, Optional
 
 from nfl_sources import (
     PIPELINE_VERSION,
+    is_nfl_game_uuid,
     nfl_game_url,
     nfl_gamebook_url,
     nfl_logo_url,
@@ -579,8 +580,28 @@ def normalise_game(row: dict, teams: dict, source_url: str, now_utc: datetime) -
     # 1.2.0 the pipeline simply showed a blank where the identifier should be and
     # raised no flag, so a human reading the report could not tell "no id upstream"
     # from "we forgot to read it".
-    if not clean(row.get("nfl_detail_id")):
-        irregularities.append("missing-nfl-api-id")
+    if clean(row.get("nfl_detail_id")):
+        # CORRECTION, verified 2026-09-25. The schedule feed's `nfl_detail_id` is NOT the
+        # NFL API game UUID, and it is NOT the key of the league's Game Book PDF.
+        #
+        # Proof, from two 2021 games fetched off nfl.com:
+        #   2021_01_DAL_TB  nfl_detail_id 10160000-0585-0395-7f87-0c3334b38e2e
+        #                   Game Book     c5722300-b37c-11eb-9617-afa9727fab42.pdf
+        #                   https://www.nfl.com/games/cowboys-at-buccaneers-2021-reg-1
+        #   2021_01_JAX_HOU nfl_detail_id 10160000-0585-0955-6419-0435c7f11d5d
+        #                   Game Book     c59f20b4-b37c-11eb-b268-91616e0aa8ce.pdf
+        #                   https://www.nfl.com/games/jaguars-at-texans-2021-reg-1
+        # Both differ, in a different id family (a constant `10160000-0585-` prefix). By
+        # contrast the play-by-play feed's own `nfl_api_id` column DOES key the Game Book:
+        # for 2026_01_ARI_LAC it reports a9a87603-4feb-11f1-abca-2c54536568a9, which is
+        # exactly the PDF the official page links.
+        #
+        #
+        # So the value is kept under its real name and is never used to build a URL. It
+        # is recorded once as a manifest-level data caveat rather than as a per-game flag
+        # on the 272 records that carry one, because 272 copies of "this is not an error"
+        # would bury the flags that are.
+        pass
     if not away_abbr or not home_abbr:
         irregularities.append("missing-team-abbreviation")
     if away_abbr and away_abbr not in teams:
@@ -644,7 +665,13 @@ def normalise_game(row: dict, teams: dict, source_url: str, now_utc: datetime) -
         "ids": {
             "nfl_gsis_old_game_id": clean(row.get("old_game_id")),
             "nfl_gsis": clean(row.get("gsis")),
-            "nfl_api_id": clean(row.get("nfl_detail_id")),
+            # Deliberately NOT filled from the schedule feed. The only source of the NFL
+            # API game UUID this project has proven is the play-by-play feed's own
+            # `nfl_api_id` column, so that is what fills this field - in build_game_pbp,
+            # from the raw play rows. See the correction note above for the evidence that
+            # the schedule feed's `nfl_detail_id` is a different identifier.
+            "nfl_api_id": None,
+            "nfl_detail_id": clean(row.get("nfl_detail_id")),
             "nflverse_game_id": game_id,
             "pfr": clean(row.get("pfr")),
             "espn": clean(row.get("espn")),
@@ -677,7 +704,9 @@ def normalise_game(row: dict, teams: dict, source_url: str, now_utc: datetime) -
             # and the UI shows no link rather than a broken one.
             "nfl_week": nfl_week_url(season, season_type, week),
             "nfl_schedules": nfl_schedules_url(),
-            "nfl_gamebook": nfl_gamebook_url(clean(row.get("nfl_detail_id"))),
+            # Only ever built from the play-by-play-sourced UUID, in build_game_pbp.
+            # A season with no play-by-play built has no Game Book link until it is.
+            "nfl_gamebook": None,
         },
         # Filled from play-by-play by build_game_pbp(); stays None when no PBP is loaded.
         # Never estimated from the final score alone - that would be a fabrication.
@@ -906,8 +935,25 @@ def build_game_pbp(
     if pbp_ids:
         nfl_api_id = nfl_api_id or clean(pbp_ids.get("nfl_api_id"))
         old_game_id = old_game_id or clean(pbp_ids.get("old_game_id"))
-    if nfl_api_id and game.get("ids", {}).get("nfl_api_id") and nfl_api_id != game["ids"]["nfl_api_id"]:
-        irregularities.append("nfl-api-id-mismatch-between-schedule-and-pbp")
+    # A UUID in an unexpected shape is not used to build a URL: a constructed-but-wrong
+    # link is worse than no link.
+    if nfl_api_id and not is_nfl_game_uuid(nfl_api_id):
+        irregularities.append("nfl-api-id-not-in-game-uuid-shape")
+        nfl_api_id = None
+    # A game with a full play-by-play feed but no NFL API game UUID is the one case where
+    # a missing identifier is actionable: the league's Game Book exists (the game has
+    # been played and documented) but this project cannot address it. Older seasons where
+    # the feed simply does not carry the id are not flagged, because there is nothing to
+    # fix and 5,000 identical flags would hide the ones that matter.
+    if plays and not nfl_api_id:
+        irregularities.append("pbp-built-without-nfl-api-id")
+    # The schedule feed's `nfl_detail_id` and the play-by-play feed's `nfl_api_id` are
+    # different identifier families (proved on two 2021 games - see normalise_game).
+    # When both are present and differ, that is expected rather than an error, but it is
+    # recorded so nobody later assumes the two can be used interchangeably.
+    detail_id = (game.get("ids") or {}).get("nfl_detail_id")
+    if nfl_api_id and detail_id and nfl_api_id != detail_id:
+        irregularities.append("nfl-detail-id-differs-from-pbp-game-uuid")
 
     drives = build_drives(plays)
     box = build_box_score(plays, home_abbr, away_abbr)
@@ -957,15 +1003,19 @@ def build_game_pbp(
     if old_game_id and not out["ids"].get("nfl_gsis_old_game_id"):
         out["ids"]["nfl_gsis_old_game_id"] = old_game_id
 
-    # The play-by-play feed carries the NFL API game UUID even for some games where the
-    # schedule feed does not, so the official Game Book link is (re)built here from the
-    # best identifier available. Without this a game with play-by-play would still show
-    # no direct route to the league's own document.
+    # The play-by-play feed is the only source of the NFL API game UUID this project has
+    # been able to prove (see normalise_game). It is the key of the league's Game Book
+    # PDF, so the link is built here - and only here - from that value.
     out["links"] = dict(game.get("links") or {})
     if not out["links"].get("nfl_gamebook"):
         book = nfl_gamebook_url(out["ids"].get("nfl_api_id"))
         if book:
             out["links"]["nfl_gamebook"] = book
+    # A Game Book link means the missing-UUID flag no longer applies.
+    if out["links"].get("nfl_gamebook"):
+        out["irregularities"] = [
+            i for i in out["irregularities"] if i != "pbp-built-without-nfl-api-id"
+        ]
     out["pbp"] = {
         "play_count": len(plays),
         "real_play_count": sum(1 for p in plays if p.get("is_real_play")),

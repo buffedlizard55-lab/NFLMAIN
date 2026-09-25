@@ -125,8 +125,10 @@ _register(
         upstream="https://www.nfl.com",
         official_chain=(
             "NFL GSIS -> api.nfl.com -> https://www.nfl.com -> nflverse schedules "
-            "(games.csv). Carries the NFL identifiers old_game_id (GSIS 10-digit), "
-            "gsis, and nfl_detail_id / nfl_api_id (NFL API UUID)."
+            "(games.csv). Carries the NFL identifiers old_game_id (GSIS 10-digit) and "
+            "gsis. NOTE (corrected 2026-09-25): its `nfl_detail_id` column is NOT the "
+            "NFL API game UUID - see the `nfl-gamebook` source for the two-game proof - "
+            "so it is stored under its own name and never used to build a URL."
         ),
         verification=(
             "VERIFIED 2026-09-25 by HTTP GET of the release asset. Header observed "
@@ -158,7 +160,8 @@ _register(
             "NFL GSIS -> api.nfl.com -> https://www.nfl.com -> nflverse play-by-play. "
             "CRAN documents {nflfastR} as 'Functions to access National Football League "
             "play-by-play data from https://www.nfl.com/'. Each row keeps nfl_api_id, the "
-            "NFL API game UUID."
+            "NFL API game UUID - verified 2026-09-25 to be exactly the identifier that "
+            "keys the league's Game Book PDF (see the nfl-gamebook source)."
         ),
         verification=(
             "VERIFIED 2026-09-25 by HTTP GET of play_by_play_2026.csv. Header observed "
@@ -392,6 +395,19 @@ _register(
             "charts, officials and lineups."
         ),
         verification=(
+            "IMPORTANT - WHICH IDENTIFIER KEYS THIS DOCUMENT, corrected 2026-09-25. "
+            "The Game Book is keyed by the NFL API game UUID as the play-by-play feed "
+            "reports it. It is NOT keyed by the schedule feed's `nfl_detail_id`. Proved "
+            "on two 2021 games, both fetched off nfl.com: "
+            "2021_01_DAL_TB reports nfl_detail_id 10160000-0585-0395-7f87-0c3334b38e2e "
+            "while its Game Book is c5722300-b37c-11eb-9617-afa9727fab42.pdf "
+            "(https://www.nfl.com/games/cowboys-at-buccaneers-2021-reg-1), and "
+            "2021_01_JAX_HOU reports nfl_detail_id 10160000-0585-0955-6419-0435c7f11d5d "
+            "while its Game Book is c59f20b4-b37c-11eb-b268-91616e0aa8ce.pdf "
+            "(https://www.nfl.com/games/jaguars-at-texans-2021-reg-1). Both differ, and "
+            "the version-less URL built from the 2021 nfl_detail_id was confirmed NOT to "
+            "serve a PDF. Building the URL from that column would have produced "
+            "links that always fail, so the pipeline no longer does. "
             "VERIFIED 2026-09-25 by HTTP GET of the version-less URL "
             "https://static.www.nfl.com/image/upload/gamecenter/"
             "a9a87603-4feb-11f1-abca-2c54536568a9.pdf - it returned the NFL document "
@@ -646,6 +662,18 @@ FRANCHISE_ALIAS = {
     "CLV": "CLE",
     "HST": "HOU",
 }
+
+
+def is_nfl_game_uuid(value) -> bool:
+    """True when ``value`` has the shape of the NFL API game UUID.
+
+    The shape was read off a real one: ``a9a87603-4feb-11f1-abca-2c54536568a9``, the id
+    that appears in the 2026 Game Book URL. Values that are not this shape are never
+    turned into a URL, because a constructed-but-wrong link is worse than no link.
+    """
+    if not value:
+        return False
+    return bool(_NFL_API_ID_RE.match(str(value).strip()))
 
 
 def franchise_key(abbr: Optional[str]) -> Optional[str]:

@@ -148,6 +148,8 @@ def collect(data_dir: str, per_season: int, current_sample: int, full: bool) -> 
     """Return {category: [urls]} gathered from the generated season files."""
     game_links: dict = {}
     team_links: set = set()
+    gamebook_links: dict = {}
+    week_links: set = set()
     current = None
     idx = os.path.join(data_dir, "seasons", "index.json")
     if os.path.exists(idx):
@@ -161,6 +163,7 @@ def collect(data_dir: str, per_season: int, current_sample: int, full: bool) -> 
             doc = json.load(fh)
         season = doc.get("season")
         urls = []
+        books = []
         for g in doc.get("games") or []:
             links = g.get("links") or {}
             if links.get("nfl_game"):
@@ -168,35 +171,63 @@ def collect(data_dir: str, per_season: int, current_sample: int, full: bool) -> 
             for key in ("nfl_team_home", "nfl_team_away"):
                 if links.get(key):
                     team_links.add(links[key])
+            # The official Game Book PDF is the strongest verification affordance on the
+            # site, so it is fetched rather than trusted. It is sampled because reading
+            # every one of 7,500 PDFs on every run would be abusive.
+            if links.get("nfl_gamebook"):
+                books.append(links["nfl_gamebook"])
+            if links.get("nfl_week"):
+                week_links.add(links["nfl_week"])
         game_links[season] = urls
+        gamebook_links[season] = books
 
     rng = random.Random(20260925)  # fixed seed -> reproducible sample across runs
     selected_games: list = []
+    selected_books: list = []
     for season, urls in sorted(game_links.items()):
         if not urls:
             continue
         if full:
             selected_games.extend(urls)
+            selected_books.extend(gamebook_links.get(season) or [])
             continue
         n = current_sample if season == current.get("season") else per_season
         n = min(n, len(urls))
         selected_games.extend(rng.sample(urls, n))
+        books = gamebook_links.get(season) or []
+        if books:
+            # Two per season plus the whole current season's sample: enough to prove the
+            # version-less Cloudinary pattern really serves the league's PDF.
+            kind = 4 if season == current.get("season") else 2
+            selected_books.extend(rng.sample(books, min(kind, len(books))))
 
-    static = [S.nfl_scores_url(), S.nfl_standings_url(), S.nfl_stats_url(), "https://www.nfl.com/"]
+    static = [
+        S.nfl_scores_url(), S.nfl_standings_url(), S.nfl_stats_url(),
+        "https://www.nfl.com/", S.nfl_schedules_url(),
+    ]
     return {
         "game_pages": selected_games,
+        "gamebook_pdfs": selected_books,
+        "week_pages": sorted(week_links),
         "team_pages": sorted(team_links),
         "static_pages": static,
         "totals": {
             "seasons": len(game_links),
             "all_game_links": sum(len(v) for v in game_links.values()),
             "sampled_game_links": len(selected_games),
+            "all_gamebook_links": sum(len(v) for v in gamebook_links.values()),
+            "sampled_gamebook_links": len(selected_books),
+            "week_links": len(week_links),
             "team_links": len(team_links),
         },
     }
 
 
 def pattern_of(url: str) -> str:
+    if "/schedules/" in url and "by-week" in url:
+        return "nfl.com/schedules/{season}/by-week/{week_slug}"
+    if "/image/upload/" in url and url.endswith(".pdf"):
+        return "static.www.nfl.com/image/upload/gamecenter/{nfl_api_id}.pdf"
     if "/games/" in url:
         return "nfl.com/games/{away}-at-{home}-{season}-{type}-{week}"
     if "/teams/" in url:
@@ -227,7 +258,9 @@ def main(argv=None) -> int:
     todo = (
         [("static", u) for u in plan["static_pages"]]
         + [("team", u) for u in plan["team_pages"]]
+        + [("week", u) for u in plan["week_pages"]]
         + [("game", u) for u in plan["game_pages"]]
+        + [("gamebook", u) for u in plan["gamebook_pdfs"]]
     )
     # de-duplicate while preserving order
     seen = set()

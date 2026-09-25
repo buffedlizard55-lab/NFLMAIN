@@ -67,6 +67,202 @@
     return dl;
   }
 
+  /* ---------------------------------------------- direct nfl.com read */
+
+  /**
+   * Renders manifest.official_direct, which the pipeline produces by fetching nfl.com's
+   * own week page during the build. Everything shown here is what that fetch actually
+   * returned - the HTTP status, the byte count, the digest, how the page was parsed and
+   * every game where the league's page and this project's published record differ.
+   */
+  function renderDirect(m) {
+    var host = N.clear($("directHost"));
+    var d = m.official_direct;
+    var panel = N.el("section", { class: "panel" });
+
+    if (!d) {
+      panel.appendChild(N.el("div", { class: "notice notice--warn" }, [
+        N.el("h4", { text: "This snapshot carries no direct-read result" }),
+        N.el("div", { text: "The manifest has no official_direct block, so no claim is " +
+          "being made about what nfl.com currently shows. Re-run the Refresh NFL data " +
+          "workflow." })
+      ]));
+      host.appendChild(panel);
+      return;
+    }
+
+    if (!d.attempted) {
+      panel.appendChild(N.el("div", { class: "notice notice--info" }, [
+        N.el("h4", { text: "No direct read was performed for this snapshot" }),
+        N.el("div", { text: d.skipped_reason || "Direct read disabled for this build." })
+      ]));
+      host.appendChild(panel);
+      return;
+    }
+
+    var read = d.weeks_read || 0;
+    var unavailable = d.weeks_unavailable || 0;
+
+    panel.appendChild(N.el("div", {
+      style: "display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"
+    }, [
+      N.el("span", { class: read ? "pill pill--ok" : "pill pill--bad" },
+        [read + " week page(s) read"]),
+      N.el("span", { class: "pill" }, [(d.games_read || 0) + " game(s) on those pages"]),
+      N.el("span", {
+        class: d.score_mismatches ? "pill pill--bad" : "pill pill--ok"
+      }, [(d.score_matches || 0) + " score(s) matched"]),
+      N.el("span", {
+        class: d.score_mismatches ? "pill pill--bad" : "pill pill--ok"
+      }, [(d.score_mismatches || 0) + " disagreed"]),
+      unavailable ? N.el("span", { class: "pill pill--warn" },
+        [unavailable + " unavailable"]) : null,
+      d.read_at ? N.el("span", { class: "pill" }, ["read " + N.relativeTime(d.read_at)]) : null
+    ].filter(Boolean)));
+
+    var t = N.el("table", { class: "src-table" });
+    t.appendChild(N.el("thead", {}, [N.el("tr", {}, [
+      N.el("th", { text: "Week" }),
+      N.el("th", { text: "nfl.com page this build fetched" }),
+      N.el("th", { text: "HTTP" }),
+      N.el("th", { text: "Bytes" }),
+      N.el("th", { text: "SHA-256" }),
+      N.el("th", { text: "Games" }),
+      N.el("th", { text: "Parsed by" })
+    ])]));
+    var tb = N.el("tbody");
+    (d.documents || []).forEach(function (doc) {
+      var methods = Object.keys(doc.parse_method_counts || {}).map(function (k) {
+        return k + "=" + doc.parse_method_counts[k];
+      }).join(", ") || "\u2014";
+      tb.appendChild(N.el("tr", {}, [
+        N.el("td", { text: N.text(doc.week) }),
+        N.el("td", {}, [
+          doc.url ? N.el("a", {
+            href: doc.url, target: "_blank", rel: "noopener noreferrer external",
+            text: doc.url
+          }) : document.createTextNode("\u2014"),
+          doc.error ? N.el("div", { class: "card__meta", text: doc.error }) : null
+        ].filter(Boolean)),
+        N.el("td", {}, [N.el("code", { text: N.text(doc.http_status) })]),
+        N.el("td", { text: N.text(doc.bytes) }),
+        N.el("td", {}, [N.el("code", { text: (doc.sha256 || "").slice(0, 16) || "\u2014" })]),
+        N.el("td", { text: N.text(doc.games) }),
+        N.el("td", { text: methods })
+      ]));
+    });
+    t.appendChild(tb);
+    panel.appendChild(t);
+
+    panel.appendChild(N.el("p", { class: "card__meta" }, [
+      "Fetched by the pipeline itself during this build, with no credentials. The digest " +
+      "is of the exact bytes nfl.com served, so a later run can prove whether the page " +
+      "changed. Numbers on this page are never merged into the archive."
+    ]));
+
+    var rows = d.disagreements || [];
+    panel.appendChild(N.el("h3", { style: "margin-top:14px" }, [
+      rows.length ? "Differences between nfl.com and this project" : "Agreement with nfl.com"
+    ]));
+    if (!rows.length) {
+      panel.appendChild(N.el("div", { class: "notice notice--info" }, [
+        N.el("div", { text: "In the week(s) read, every score nfl.com published for a game " +
+          "this build also has a score for matched exactly, and no game appeared on the " +
+          "league's page without being present here." })
+      ]));
+    } else {
+      panel.appendChild(N.el("p", { style: "margin-top:0", class: "card__meta" }, [
+        "Each row is a place where the league's own page and this project's record " +
+        "differ, or where one lists a game the other does not. These are flagged for " +
+        "review, not corrected silently."
+      ]));
+      var dt = N.el("table", { class: "src-table" });
+      dt.appendChild(N.el("thead", {}, [N.el("tr", {}, [
+        N.el("th", { text: "Week" }), N.el("th", { text: "Kind" }),
+        N.el("th", { text: "Game" }), N.el("th", { text: "This project" }),
+        N.el("th", { text: "nfl.com" }), N.el("th", { text: "Detail" })
+      ])]));
+      var dtb = N.el("tbody");
+      rows.forEach(function (r) {
+        dtb.appendChild(N.el("tr", {}, [
+          N.el("td", { text: N.text(r.week) }),
+          N.el("td", {}, [N.el("code", { text: r.kind || "" })]),
+          N.el("td", {}, [
+            r.game_id ? N.el("a", {
+              href: "game.html?id=" + encodeURIComponent(r.game_id),
+              text: r.game_id
+            }) : document.createTextNode("\u2014")
+          ]),
+          N.el("td", { text: N.text(r.ours) }),
+          N.el("td", {}, [
+            r.nfl_url ? N.el("a", {
+              href: r.nfl_url, target: "_blank", rel: "noopener noreferrer external",
+              text: N.text(r.official) || "official page"
+            }) : document.createTextNode(N.text(r.official))
+          ]),
+          N.el("td", { text: r.detail || "" })
+        ]));
+      });
+      dt.appendChild(dtb);
+      panel.appendChild(dt);
+    }
+
+    host.appendChild(panel);
+  }
+
+  /* ------------------------------------------------------- data caveats */
+
+  /**
+   * Renders manifest.data_caveats: corrections about what an upstream feed's fields
+   * actually mean, each with the evidence that established it and the numbers this build
+   * measured. These exist so a later session cannot silently re-introduce a mistake that
+   * has already been found and proved.
+   */
+  function renderCaveats(m) {
+    var host = N.clear($("caveatHost"));
+    if (!host) return;
+    var cavs = m.data_caveats || [];
+    if (!cavs.length) {
+      host.appendChild(N.el("div", { class: "notice notice--info" }, [
+        N.el("div", { text: "No upstream schema corrections are outstanding for this " +
+          "snapshot." })
+      ]));
+      return;
+    }
+    cavs.forEach(function (c) {
+      var panel = N.el("section", { class: "panel", id: "caveat-" + N.text(c.id) });
+      panel.appendChild(N.el("h4", { style: "margin-top:0", text: c.title || c.id }));
+      panel.appendChild(N.el("p", { text: c.detail || "" }));
+      var measured = c.measured || {};
+      var keys = Object.keys(measured);
+      if (keys.length) {
+        panel.appendChild(N.el("p", { class: "card__meta", style: "margin-bottom:4px" },
+          ["Measured in this snapshot:"]));
+        panel.appendChild(kvTable(keys.map(function (k) {
+          return [k.replace(/_/g, " "), typeof measured[k] === "number"
+            ? measured[k].toLocaleString() : String(measured[k])];
+        })));
+      }
+      if (c.effect_on_site) {
+        panel.appendChild(N.el("p", { style: "margin-bottom:0" }, [
+          N.el("strong", { text: "Effect on the site: " }), c.effect_on_site
+        ]));
+      }
+      if ((c.evidence || []).length) {
+        panel.appendChild(N.el("p", { class: "card__meta", style: "margin:10px 0 0" },
+          ["EVIDENCE \\u2014 please review each one:"]));
+        var ul = N.el("ul", { style: "margin:0;padding-left:18px;font-size:12.5px" });
+        c.evidence.forEach(function (u) {
+          ul.appendChild(N.el("li", {}, [N.el("a", {
+            href: u, target: "_blank", rel: "noopener noreferrer external", text: u
+          })]));
+        });
+        panel.appendChild(ul);
+      }
+      host.appendChild(panel);
+    });
+  }
+
   /* ------------------------------------------------------- official api */
 
   function renderApi(m) {
@@ -314,6 +510,11 @@
       "postseason-game-with-tied-score": "A POSTSEASON game marked Final has equal scores. This one is genuinely impossible: playoff overtime continues until a winner emerges. Treated as a real data error and flagged for review.",
       "result-does-not-match-scores": "The upstream result column disagrees with home_score - away_score.",
       "missing-nfl-gsis-old-game-id": "No NFL GSIS 10-digit id, so the record cannot be tied to an official NFL identifier.",
+      "pbp-built-without-nfl-api-id": "A full play-by-play feed exists for this game but the feed published no NFL API game UUID, so the league's Game Book PDF cannot be addressed. Older seasons where the identifier simply does not exist upstream are not flagged - only the cases where it should be there and is not.",
+      "nfl-api-id-not-in-game-uuid-shape": "The identifier published for this game is not in the shape of an NFL game UUID, so no link is built from it. A fabricated link would be worse than no link.",
+      "nfl-detail-id-differs-from-pbp-game-uuid": "The schedule feed and the play-by-play feed name this game with different identifier families. This is expected, not an error: it is recorded so nobody treats the two as interchangeable.",
+      "status-taken-from-nfl-com": "This project's clock-based estimate of the game status was overridden by the status nfl.com itself published. The correction came from the league's own page, not from a guess.",
+      "official-score-disagrees-with-mirror": "nfl.com's own week page publishes a different score for this game than the archive does. Treat the game as unverified until the official Game Book settles it.",
       "missing-game-id": "No game id at all.",
       "missing-team-abbreviation": "A team abbreviation is empty.",
       "unknown-team-abbreviation": "A team code is not in the teams metadata; no name is guessed.",
@@ -431,6 +632,8 @@
         return;
       }
       renderStatusbar(m);
+      renderDirect(m);
+      renderCaveats(m);
       renderSources(m);
       renderApi(m);
       renderLinks(lc);

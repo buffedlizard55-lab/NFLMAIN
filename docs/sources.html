@@ -99,8 +99,42 @@
       document.</p>
   </section>
 
+  <h2 class="section-title" id="caveats">Corrections to the upstream data</h2>
+  <p class="page-sub">Things about the feeds that are not faults in one record but that a
+    reader would otherwise get wrong &mdash; each with the evidence that established it and
+    the counts this snapshot measured. These are here so a later session cannot quietly
+    re-introduce a mistake that has already been found and proved.</p>
+  <div id="caveatHost"></div>
+
   <h2 class="section-title" id="sources">Declared sources</h2>
+  <p class="page-sub">Every URL this project reads is declared in
+    <span class="mono">pipeline/nfl_sources.py</span> with its provenance chain back to the NFL,
+    what was actually observed when it was probed, and its licence note. If a URL is not in that
+    registry it is not used.</p>
   <div id="sourcesHost"><div class="spinner" role="progressbar" aria-label="Loading"></div></div>
+
+  <h2 class="section-title" id="direct">Direct from nfl.com</h2>
+  <section class="panel">
+    <p style="margin-top:0">The charter for this project asks for data straight from the NFL.
+      <span class="mono">api.nfl.com</span> &mdash; the league's own API &mdash; is reachable but
+      answers <span class="mono">HTTP 401</span> without a credential the NFL issues only to its
+      own site and to contracted partners, and the old
+      <span class="mono">nfl.com/liveupdate</span> feeds are decommissioned. What is still open,
+      unauthenticated and produced by the league is the website itself:
+      <a href="https://www.nfl.com/schedules/" rel="noopener noreferrer external">nfl.com/schedules</a>.
+      Each game tile there carries the NFL's own score and status text next to the canonical
+      <span class="mono">/games/</span> URL.</p>
+    <p><strong>This build reads that page and compares it with what is published here.</strong>
+      A disagreement is shown below rather than hidden. The read has one narrow, honest job:
+      it confirms or contradicts the published scores, and it can mark a game Final when the
+      league says it is over even if this project's clock estimate still had it in progress.
+      It never supplies play-by-play, and its numbers are never merged into the archive &mdash;
+      they are kept as their own artefact so the two can always be told apart.</p>
+    <p class="card__meta">If the read fails, the snapshot says so. A page that could not be
+      fetched or parsed is recorded as unavailable; it is never treated as agreement, and an
+      empty result is never reported as a success.</p>
+  </section>
+  <div id="directHost"></div>
 
   <h2 class="section-title" id="official-api">Official NFL API status</h2>
   <div id="apiHost"></div>
