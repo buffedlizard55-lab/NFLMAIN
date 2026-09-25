@@ -190,13 +190,20 @@ def _nick_is_known(nick: Optional[str]) -> bool:
     return S.abbr_for_nick(nick) is not None
 
 
-def _parse_label(label: str) -> Optional[dict]:
-    """Parse one nfl.com game label into scores + status, or None if unreadable."""
+def _parse_label(label: str, *, anywhere: bool = False) -> Optional[dict]:
+    """Parse one nfl.com game label into scores + status, or None if unreadable.
+
+    ``anywhere=True`` searches inside a longer string instead of requiring the label to
+    start with the game. That is needed for text scraped out of the rendered page, where
+    the game sits inside a sentence. It is only ever used together with the club-name
+    check in ``_candidate_score``, so a stray number pair in unrelated prose cannot pass
+    for a game.
+    """
     text = strip_ui_chrome(label)
     if not text:
         return None
 
-    played = _PLAYED_RE.match(text)
+    played = _PLAYED_RE.search(text) if anywhere else _PLAYED_RE.match(text)
     if played:
         return {
             "away_nick": _clean(played.group("away")),
@@ -208,7 +215,7 @@ def _parse_label(label: str) -> Optional[dict]:
             "label": text,
         }
 
-    scheduled = _SCHEDULED_RE.match(text)
+    scheduled = _SCHEDULED_RE.search(text) if anywhere else _SCHEDULED_RE.match(text)
     if scheduled:
         return {
             "away_nick": _clean(scheduled.group("away")),
@@ -238,6 +245,28 @@ def _candidate_score(parsed: dict) -> tuple:
     status_known = int(status in ("FINAL", "IN_PROGRESS", "POSTPONED"))
     has_score = int(parsed.get("away_score") is not None)
     return (known_nicks, status_known, has_score)
+
+
+_TAG_RE = re.compile(r"<[^>]{0,4000}>")
+_TEXT_SPLIT_RE = re.compile(r"(?:\s{2,}|\n|\u2022|\|)")
+
+
+def _visible_text_fragments(raw: str, start: int, end: int) -> list:
+    """Tag-stripped text from a markup window, split into attemptable fragments.
+
+    This exists because nfl.com's accessible names do not always state the game status
+    even when the rendered text does. Reading only aria-labels left the 2026 week-3
+    Thursday game with a real final score and a status of "we could not tell".
+    """
+    window = raw[max(0, start): max(0, end)]
+    text = _TAG_RE.sub(" ", window)
+    text = html_mod.unescape(text)
+    fragments = []
+    for chunk in _TEXT_SPLIT_RE.split(text):
+        chunk = chunk.strip(" \t\r\n-")
+        if 8 <= len(chunk) <= 400:
+            fragments.append(chunk)
+    return fragments
 
 
 def _collect_labels(raw: str, start: int, end: int) -> list:
@@ -313,22 +342,30 @@ def parse_week_html(raw: str, *, source_url: str = "") -> dict:
         # Gather every label near this game link and take the most informative one. The
         # previous revision took the FIRST label it found, which is how a "Watch Replay"
         # control ended up being reported as the away team.
-        window_start = match.start()
         window_end = match.start() + 4000
         candidates = []
         own = _ARIA_RE.search(match.group(0))
         if own:
             labels_seen += 1
-            candidates.append(own.group("label"))
+            candidates.append((own.group("label"), False))
         for label in _collect_labels(raw or "", match.end(), window_end):
             labels_seen += 1
-            candidates.append(label)
+            candidates.append((label, False))
+        # ...and the rendered text, because nfl.com does not always state the status in
+        # the accessible name even when it states it on screen. Anything found inside a
+        # longer string must name two real clubs before it is believed.
+        for fragment in _visible_text_fragments(raw or "", match.start(), window_end):
+            labels_seen += 1
+            candidates.append((fragment, True))
 
         best = None
         best_score = None
-        for label in candidates:
-            parsed = _parse_label(label)
+        for label, anywhere in candidates:
+            parsed = _parse_label(label, anywhere=anywhere)
             if not parsed:
+                continue
+            if anywhere and not (_nick_is_known(parsed.get("away_nick")) and
+                                 _nick_is_known(parsed.get("home_nick"))):
                 continue
             score = _candidate_score(parsed)
             if best_score is None or score > best_score:
@@ -380,14 +417,18 @@ def parse_week_html(raw: str, *, source_url: str = "") -> dict:
             continue
         # Try to attach a label from the surrounding markup; if there is none the game is
         # still reported, with null scores, rather than dropped.
-        candidates = _collect_labels(raw or "",
-                                     max(0, match.start() - 2000),
-                                     match.start() + 2000)
+        candidates = [(l, False) for l in _collect_labels(
+            raw or "", max(0, match.start() - 2000), match.start() + 2000)]
+        candidates += [(f, True) for f in _visible_text_fragments(
+            raw or "", max(0, match.start() - 2000), match.start() + 2000)]
         best, best_score = None, None
-        for label in candidates:
+        for label, anywhere in candidates:
             labels_seen += 1
-            parsed = _parse_label(label)
+            parsed = _parse_label(label, anywhere=anywhere)
             if not parsed:
+                continue
+            if anywhere and not (_nick_is_known(parsed.get("away_nick")) and
+                                 _nick_is_known(parsed.get("home_nick"))):
                 continue
             score = _candidate_score(parsed)
             if best_score is None or score > best_score:

@@ -1563,3 +1563,39 @@ def test_link_audit_is_bounded_and_a_partial_audit_says_so(tmp_path):
     js = _read(JS, "sources.js")
     assert "not_checked_for_budget" in js and "This audit is incomplete" in js, \
         "the Sources page would present a partial audit as a complete one"
+
+
+def test_rendered_text_is_used_when_the_accessible_name_omits_the_status():
+    """nfl.com does not always put the status in the accessible name.
+
+    Observed in the 2026 week-3 read: the Thursday tile's aria-label strips to
+    "Falcons 35, Packers 14, Thursday, September 24th" - a real final score with no status
+    word - while the rendered text on the page says "..., FINAL, ...". Reading only the
+    accessible name left that game with a matched score and a status of "we could not
+    tell", which is a worse answer than reading the page.
+    """
+    import nfl_direct as D
+
+    html = ('<a href="/games/falcons-at-packers-2026-reg-3" '
+            'aria-label="Watch Replay, Falcons 35, Packers 14, Thursday, September 24th">'
+            '</a><div>Falcons 35, Packers 14, FINAL, Thursday, September 24th</div>')
+    parsed = D.parse_week_html(html)
+    g = parsed["games"][0]
+    assert g["away_nick"] == "Falcons" and g["home_nick"] == "Packers"
+    assert (g["away_score"], g["home_score"]) == (35, 14)
+    assert g["status"] == "FINAL"
+    assert g["status_text"] == "FINAL"
+
+
+def test_prose_near_a_link_cannot_be_mistaken_for_a_game():
+    """Text scraped from inside a longer sentence must name two real clubs, or it is not
+    believed. Otherwise a stray pair of numbers in a paragraph could be read as a score."""
+    import nfl_direct as D
+
+    html = ('<a href="/games/ravens-at-cowboys-2026-reg-3"></a>'
+            '<p>Rio de Janeiro 3, London 4, FINAL, Sunday, September 27th</p>')
+    parsed = D.parse_week_html(html)
+    g = parsed["games"][0]
+    assert g["away_nick"] is None, "a non-club pair of names must not become a team"
+    assert g["away_score"] is None and g["home_score"] is None
+    assert g["status"] != "FINAL", "no status may be attached from unmatched prose"
