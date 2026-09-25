@@ -211,8 +211,9 @@ conclusion drawn"* rather than repeating an old result.
 | `GET nfl.com/liveupdate/scorestrip/ss.json` | Resolved to the nfl.com homepage | **Legacy liveupdate feed is retired — do not use** |
 | `GET nflverse-data/releases/tag/pbp` assets | `play_by_play_1999.*` … `play_by_play_2026.*` | 28 seasons of play-by-play confirmed present |
 | `play_by_play_2026.csv.gz` last-published | `2026-09-25T04:32:51Z` (during verification) | The feed updates intra-day while games are played |
-| `GET nfl.com/schedules/2026/by-week/week-3` | HTTP 200, 2,443,126 bytes, SHA-256 `20c3edaa6d487786…` | **Works with no credentials.** This is the direct read: 15 games parsed off the league's own page and 17 published scores compared across the two weeks read, all matching |
-| `GET static.www.nfl.com/image/upload/gamecenter/{nfl_api_id}.pdf` (no version stamp) | HTTP 200, the NFL's own Game Summary document | **Works without the Cloudinary version stamp**, so the pipeline can build the Game Book link itself |
+| `GET nfl.com/schedules/2026/by-week/week-3` | HTTP 200, 2,443,091 bytes, SHA-256 `9c90cd6fa7f66a48…`, 16 games parsed | **Works with no credentials.** This is the direct read. Across the two weeks read: 32 games on the league's pages, 17 comparable, **17 scores matched, 0 disagreed**, 17 statuses confirmed, 0 games listed that we lack |
+| `GET static.www.nfl.com/image/upload/gamecenter/{nfl_api_id}.pdf` (no version stamp) | HTTP 200, the NFL's own Game Summary document (4 of 4 sampled) | **Works without the Cloudinary version stamp**, so the pipeline builds the Game Book link itself instead of sending you to click through a page |
+| `GET nfl.com/schedules/2010/by-week/week-3` and 17 more week pages | HTTP 200 (18 of 18 sampled) | The week-page pattern holds across seasons, which is why links are built for 2010 onward and not for 1999-2009 |
 
 Official documentation:
 [NFL API getting started](https://api.nfl.com/docs/getting-started/index.html) ·
@@ -260,6 +261,9 @@ Enforced in code, not just in intent:
     `docs/data/official/` and `manifest.official_direct` with the HTTP status, byte count,
     SHA-256 digest and the parse method used. **A failed fetch or an unreadable page is
     recorded as unavailable — never as agreement**, and an empty result is never a success.
+    A read is scoped to the week it is for: the page's links to *other* weeks are excluded
+    and counted, because counting them produced 16 false "we are missing these games"
+    alarms on a week where nothing was wrong.
 11. **A missed game is a failure, not a silence.** The reader looks for game slugs anywhere
     in the page, not just in the markup patterns it expects, because a page the league
     renders in a different template must not quietly shrink the comparison. Games nfl.com
@@ -393,7 +397,8 @@ actual build state**, so it cannot go stale — see `docs/data/manifest.json →
 | Live updates are snapshot polling, not streaming | GitHub Pages is static and cannot push | A small proxy or serverless function holding NFL credentials |
 | "In progress" is estimated unless an official `GAME_END` play exists | The schedule feed carries scores but no live game clock | Use the official status field via `api.nfl.com` |
 | Some games show status `Unknown` | Kickoff has passed but no score is published. A postponed game and a lagging feed are indistinguishable in the data | Cross-check against nfl.com/scores; the pipeline refuses to guess |
-| The direct read of nfl.com covers the last 2 weeks, not the whole archive | Reading 7,500 week pages per run would hammer the league's servers for no extra benefit | Raise `--direct-weeks`; the count is reported on the Sources page, generated from the build |
+| The direct read of nfl.com covers the last 2 weeks, not the whole archive | Reading 7,500 week pages per run would hammer the league's servers for no extra benefit. Each run reads 2 week pages (HTTP 200, ~2.4 MB each, digests recorded) | Raise `--direct-weeks`; the count is reported on the Sources page, generated from the build |
+| Live in-game status from the direct read is unproven | It has only been observed on completed weeks, where nfl.com prints `FINAL`. Whether the page shows an in-progress score is **not yet verified** | Watch a refresh during a live game window and check `status-taken-from-nfl-com` on the Sources page (ROADMAP 1.15) |
 | Game Book links exist only where the NFL publishes the game UUID | The PDF is keyed by that UUID and older seasons simply do not carry it upstream | Backfill play-by-play for a season — the UUID comes from there — and the links appear for that season |
 
 ---

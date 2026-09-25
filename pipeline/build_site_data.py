@@ -904,7 +904,7 @@ def render_report(ctx: dict) -> str:
         a("Per-game detail, including every comparison, is written to "
           "`docs/data/official/` and rendered on the Sources page.")
     a("")
-    a("## 4.2 Official NFL API cross-check")
+    a("## 5. Official NFL API cross-check (credential-gated)")
     a("")
     api = ctx["official_api"]
     if not api.get("configured"):
@@ -929,7 +929,7 @@ def render_report(ctx: dict) -> str:
                 a(f"  * **MISMATCH** {m.get('mirror_game_id')}: official={m.get('official')} "
                   f"mirror={m.get('mirror')}")
     a("")
-    a("### 4.1 Live probe evidence (reproduced on this run)")
+    a("### 5.1 Live probe evidence (reproduced on this run)")
     a("")
     a("These requests were made by the pipeline during *this* build. No credentials were "
       "sent. The purpose is to keep the claim \"api.nfl.com exists and is auth-gated\" "
@@ -954,7 +954,7 @@ def render_report(ctx: dict) -> str:
                 a(f"* body excerpt from `{pr.get('name')}`: "
                   f"`{pr['body_excerpt'][:160].replace(chr(10), ' ')}`")
     a("")
-    a("## 4.9 Data caveats: corrections to what the upstream feeds mean")
+    a("## 6. Data caveats: corrections to what the upstream feeds mean")
     a("")
     a("These are not faults in a single record. They are things about the upstream data "
       "that a reader would otherwise get wrong, each with the evidence that established "
@@ -978,7 +978,7 @@ def render_report(ctx: dict) -> str:
         if cav.get("effect_on_site"):
             a(f"Effect on the site: {cav['effect_on_site']}")
             a("")
-    a("## 5. Irregularities flagged for review")
+    a("## 7. Irregularities flagged for review")
     a("")
     irr = ctx["irregularities"]
     if not irr["by_kind"]:
@@ -1068,7 +1068,7 @@ def render_report(ctx: dict) -> str:
         if len(irr["items"]) > 200:
             a(f"* ...and {len(irr['items']) - 200} more (see `docs/data/manifest.json`).")
     a("")
-    a("## 6. Manual review links")
+    a("## 8. Manual review links")
     a("")
     a("* Official NFL scoreboard: <https://www.nfl.com/scores/>")
     a("* Official NFL stats: <https://www.nfl.com/stats/>")
