@@ -24,8 +24,24 @@ def load(path):
         return None
 
 
-def main() -> int:
-    out = os.environ.get("GITHUB_STEP_SUMMARY")
+def main(argv=None) -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--data", default=os.path.join(REPO_ROOT, "docs", "data"),
+                        help="directory holding manifest.json / link-check.json")
+    parser.add_argument("--manifest", default=None)
+    parser.add_argument("--link-check", dest="linkcheck", default=None)
+    parser.add_argument("--summary-file", default=None,
+                        help="write here instead of $GITHUB_STEP_SUMMARY")
+    args = parser.parse_args(argv)
+
+    manifest_path = args.manifest or os.path.join(args.data, "manifest.json")
+    linkcheck_path = args.linkcheck or os.path.join(args.data, "link-check.json")
+    global MANIFEST, LINKCHECK
+    MANIFEST, LINKCHECK = manifest_path, linkcheck_path
+
+    out = args.summary_file or os.environ.get("GITHUB_STEP_SUMMARY")
     m = load(MANIFEST)
     if not m:
         if out:

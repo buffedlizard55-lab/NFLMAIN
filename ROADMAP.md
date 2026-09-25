@@ -23,7 +23,10 @@ NFL, with no fabrication.*
 | Optional `api.nfl.com` cross-check | `pipeline/fetch_nfl_official.py`; activates when credentials are present as secrets |
 | GitHub Pages site (4 pages) | Scoreboard, game detail, archive, sources & verification. Vanilla HTML/CSS/JS, zero third-party runtime |
 | Scheduled refresh | `refresh-data.yml`, crons tuned to real NFL game windows, commits only on change |
-| Test suite | 56 tests covering null discipline, status derivation, link construction, aggregation, and a full offline build |
+| Test suite | 69 tests covering null discipline, status derivation, link construction, aggregation, workflow-file validity, and a full offline build |
+| Frontend executed in CI | `tests/frontend_smoke.js` runs the site's real JS against a real build through a DOM shim and fails if `undefined` / `NaN` / `[object Object]` reaches the screen, or if a page renders empty |
+| Link checking cannot take the feed down | Inconclusive checks (no HTTP response) are recorded separately from real failures; a pattern is only declared broken on 3+ genuine HTTP failures with zero successes |
+| api.nfl.com evidence is reproducible | `probe_endpoints()` re-makes the probe requests on every build; the Sources page renders the observed statuses rather than a remembered table |
 | Live-build assertion in CI | `tests.yml` builds against the **real** feeds and fails if seasons/games/plays counts are implausible or if a fixture was used |
 
 ---

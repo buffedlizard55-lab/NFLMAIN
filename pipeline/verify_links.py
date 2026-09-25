@@ -211,17 +211,24 @@ def main(argv=None) -> int:
         r["category"] = cat
         results[url] = r
         pat = pattern_of(url)
-        agg = patterns.setdefault(pat, {"checked": 0, "ok": 0, "failed": []})
+        agg = patterns.setdefault(
+            pat, {"checked": 0, "ok": 0, "failed": [], "inconclusive": []}
+        )
         agg["checked"] += 1
         if r["ok"]:
             agg["ok"] += 1
+        elif r["status"] is None:
+            # No HTTP response at all: a network/TLS/DNS problem on OUR side, or the
+            # host refusing the connection. This says nothing about whether the URL is
+            # valid, so it is recorded separately and must never count as a failure.
+            agg["inconclusive"].append(url)
+            errors.append({"url": url, "error": r["error"]})
         else:
+            # A real HTTP status: the URL was reached and answered 4xx/5xx. This is
+            # genuine evidence that our constructed link is wrong.
             agg["failed"].append(url)
-            if r["status"] is None:
-                errors.append({"url": url, "error": r["error"]})
-            else:
-                failures.append({"url": url, "status": r["status"], "category": cat,
-                                 "final_url": r["final_url"]})
+            failures.append({"url": url, "status": r["status"], "category": cat,
+                             "final_url": r["final_url"]})
         if i % 25 == 0 or i == len(todo):
             http_util.log(f"  {i}/{len(todo)} checked, {len(failures)} failed")
         if args.delay and i < len(todo):
@@ -254,8 +261,13 @@ def main(argv=None) -> int:
     http_util.log(f"link-check -> {out_path}")
 
     for pat, agg in sorted(patterns.items()):
-        pct = (100.0 * agg["ok"] / agg["checked"]) if agg["checked"] else 0.0
-        http_util.log(f"  pattern {pat}: {agg['ok']}/{agg['checked']} ok ({pct:.1f}%)")
+        decided = agg["ok"] + len(agg["failed"])
+        pct = (100.0 * agg["ok"] / decided) if decided else 0.0
+        note = "" if not agg["inconclusive"] else \
+            f", {len(agg['inconclusive'])} inconclusive (no HTTP response)"
+        http_util.log(
+            f"  pattern {pat}: {agg['ok']}/{decided} decided ok ({pct:.1f}%){note}"
+        )
 
     if failures:
         http_util.warn(f"{len(failures)} constructed nfl.com link(s) did not resolve; "
@@ -265,11 +277,29 @@ def main(argv=None) -> int:
 
     # A failing *pattern* is a hard error: it means our URL construction is wrong and
     # every link built from it is suspect.
-    broken_patterns = [p for p, a in patterns.items()
-                       if a["checked"] >= 3 and a["ok"] == 0]
+    #
+    # Two guards, both learned the hard way:
+    #   * Only REAL HTTP failures count. Inconclusive checks (no response at all) are
+    #     excluded, so a runner without egress, or nfl.com rate-limiting us, cannot abort
+    #     the build. Stopping the feed over a link-check outage would trade a cosmetic
+    #     problem for the one thing this project exists to provide.
+    #   * A pattern needs at least 3 decided checks before we conclude it is broken.
+    broken_patterns = [
+        p for p, a in patterns.items()
+        if len(a["failed"]) >= 3 and a["ok"] == 0
+    ]
     if broken_patterns:
-        http_util.fail(f"link pattern(s) entirely broken: {broken_patterns}")
+        http_util.fail(
+            f"link pattern(s) entirely broken (>=3 real HTTP failures, 0 successes): "
+            f"{broken_patterns}. Our URL construction is wrong; refusing to publish "
+            f"links that do not resolve."
+        )
         return 1
+    if errors and not failures:
+        http_util.log(
+            f"  {len(errors)} check(s) were inconclusive and {len(failures)} genuinely "
+            f"failed; no link pattern is proven broken. Publishing continues."
+        )
     return 0
 
 

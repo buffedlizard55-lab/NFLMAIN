@@ -711,3 +711,187 @@ def test_every_page_ships_its_own_controller_and_no_third_party_runtime():
         for banned in ("cdn.jsdelivr", "unpkg.com", "cdnjs.", "googleapis.com",
                        "googletagmanager", "cloudflare"):
             assert banned not in src, f"{page} references third-party runtime {banned}"
+
+
+# --------------------------------------------------------------------------- #
+# Workflow files: a malformed workflow fails in 0 seconds with an opaque
+# "workflow file issue" message and silently disables all automation. That is the
+# worst possible failure mode for a feed whose whole point is running unattended.
+# --------------------------------------------------------------------------- #
+
+WORKFLOWS = os.path.join(REPO_ROOT, ".github", "workflows")
+
+
+def _load_workflows():
+    yaml = pytest.importorskip("yaml", reason="PyYAML not installed")
+    out = {}
+    for name in sorted(os.listdir(WORKFLOWS)):
+        if name.endswith((".yml", ".yaml")):
+            with open(os.path.join(WORKFLOWS, name), encoding="utf-8") as fh:
+                out[name] = yaml.safe_load(fh)
+    return out
+
+
+def test_every_workflow_file_is_valid_yaml_with_only_known_top_level_keys():
+    allowed = {"name", "on", True, "permissions", "concurrency", "jobs", "env", "defaults"}
+    for name, doc in _load_workflows().items():
+        stray = set(doc) - allowed
+        assert not stray, (
+            f"{name} has unexpected top-level key(s) {stray}. This almost always means a "
+            "multi-line string escaped its block scalar and YAML swallowed part of a "
+            "shell script."
+        )
+        # YAML 1.1 parses the bare key `on` as boolean True.
+        assert ("on" in doc) or (True in doc), f"{name} has no trigger"
+
+
+def test_no_workflow_has_a_stray_key_from_a_leaked_commit_message():
+    """Regression guard: `-m "subject\n\nbody"` at column 0 once broke every workflow."""
+    for fname, doc in _load_workflows().items():
+        assert "Run" not in doc, f"{fname} leaked a 'Run:' top-level key"
+
+
+def test_every_workflow_step_has_exactly_one_of_run_or_uses():
+    for fname, doc in _load_workflows().items():
+        for job_name, job in (doc.get("jobs") or {}).items():
+            steps = job.get("steps") or []
+            assert steps, f"{fname}:{job_name} has no steps"
+            for i, step in enumerate(steps):
+                has_run, has_uses = "run" in step, "uses" in step
+                assert has_run != has_uses, (
+                    f"{fname}:{job_name} step {i} ({step.get('name')}) must have exactly "
+                    "one of run/uses"
+                )
+                if has_uses:
+                    assert "@" in step["uses"], f"{fname}:{job_name} step {i} action is unpinned"
+
+
+def test_data_committing_workflows_cannot_loop():
+    """Any workflow that commits generated data must mark the commit [skip ci]."""
+    for fname, doc in _load_workflows().items():
+        for job in (doc.get("jobs") or {}).values():
+            for step in job.get("steps") or []:
+                script = step.get("run") or ""
+                if "git commit" in script and "git push" in script:
+                    assert "[skip ci]" in script, (
+                        f"{fname}:{step.get('name')} commits and pushes but does not use "
+                        "[skip ci]; it will re-trigger itself forever."
+                    )
+
+
+def test_refresh_workflow_runs_on_a_schedule_covering_game_windows():
+    doc = _load_workflows()["refresh-data.yml"]
+    sched = (doc.get("on") or doc.get(True) or {}).get("schedule") or []
+    assert sched, "refresh-data.yml has no schedule - the feed would go stale"
+    crons = [s["cron"] for s in sched]
+    # Sunday games run 17:00-06:00 UTC; a schedule that misses those hours cannot keep
+    # the "current feed" current.
+    assert any("0,1" in c or "* * 0" in c for c in crons), \
+        f"no Sunday cron found in {crons}"
+    assert any("*/" in c for c in crons), f"no sub-hourly refresh found in {crons}"
+
+
+# --------------------------------------------------------------------------- #
+# Link verification: the feed must survive a link-check outage
+# --------------------------------------------------------------------------- #
+
+import verify_links as VL
+
+
+def _build_fixture_site(tmp_path):
+    out = tmp_path / "data"
+    r = subprocess.run(
+        [sys.executable, "pipeline/build_site_data.py", "--offline", FIXTURES,
+         "--out", str(out), "--no-report"],
+        capture_output=True, text=True, cwd=REPO_ROOT,
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+    return out
+
+
+def _verify_exit_code(argv):
+    """verify_links signals a hard failure via http_util.fail() -> SystemExit(1)."""
+    try:
+        return VL.main(argv)
+    except SystemExit as exc:  # noqa: PERF203 - deliberate
+        return int(exc.code or 0)
+
+
+def _fake_check(status=None, error=None, ok=None):
+    def _f(url, timeout=30):
+        real_ok = ok if ok is not None else (status == 200)
+        return {
+            "url": url, "status": status, "ok": bool(real_ok), "final_url": url,
+            "redirected": False, "looks_like_game_center": False,
+            "looks_like_team_page": False, "elapsed_s": 0.0, "error": error,
+        }
+    return _f
+
+
+def test_inconclusive_link_checks_never_abort_the_build(tmp_path, monkeypatch):
+    """A runner with no egress must still publish data.
+
+    Stopping the feed because we could not reach nfl.com would trade a cosmetic problem
+    for the one thing this project exists to provide.
+    """
+    out = _build_fixture_site(tmp_path)
+    monkeypatch.setattr(VL, "check_url",
+                        _fake_check(status=None, error="URLError: no route to host"))
+    rc = _verify_exit_code(["--data", str(out), "--out", str(out / "link-check.json"),
+                            "--per-season", "3", "--current-sample", "5", "--delay", "0"])
+    assert rc == 0, "a network outage aborted the build"
+
+    doc = json.loads((out / "link-check.json").read_text(encoding="utf-8"))
+    assert doc["summary"]["failed"] == 0, "network errors were counted as failures"
+    assert doc["summary"]["network_errors"] > 0
+    assert doc["failures"] == [], "the site would hide valid links after a network blip"
+    for pat, agg in doc["patterns"].items():
+        assert agg["failed"] == [], f"{pat}: inconclusive checks recorded as failed"
+
+
+def test_genuinely_broken_url_pattern_hard_fails(tmp_path, monkeypatch):
+    """Three real 404s on one pattern means our URL construction is wrong."""
+    out = _build_fixture_site(tmp_path)
+    monkeypatch.setattr(VL, "check_url", _fake_check(status=404, ok=False))
+    rc = _verify_exit_code(["--data", str(out), "--out", str(out / "link-check.json"),
+                            "--per-season", "3", "--current-sample", "20", "--delay", "0"])
+    assert rc == 1, "a broken URL pattern did not stop the build"
+
+
+def test_redirect_to_homepage_counts_as_a_real_failure_not_inconclusive(tmp_path, monkeypatch):
+    """This is how the retired nfl.com/liveupdate feed was detected: HTTP 200, wrong page."""
+    out = _build_fixture_site(tmp_path)
+    monkeypatch.setattr(VL, "check_url",
+                        _fake_check(status=200, ok=False))  # reached, but not the right page
+    rc = _verify_exit_code(["--data", str(out), "--out", str(out / "link-check.json"),
+                            "--per-season", "3", "--current-sample", "20", "--delay", "0"])
+    assert rc == 1
+    doc = json.loads((out / "link-check.json").read_text(encoding="utf-8"))
+    assert doc["summary"]["network_errors"] == 0
+    assert doc["summary"]["failed"] > 0
+
+
+def test_failure_records_carry_the_url_key_the_site_reads(tmp_path, monkeypatch):
+    """common.js linkIsBroken() matches on entry.url - a plain string list would fail open."""
+    out = _build_fixture_site(tmp_path)
+    monkeypatch.setattr(VL, "check_url", _fake_check(status=404, ok=False))
+    _verify_exit_code(["--data", str(out), "--out", str(out / "link-check.json"),
+                       "--per-season", "1", "--current-sample", "3", "--delay", "0"])
+    doc = json.loads((out / "link-check.json").read_text(encoding="utf-8"))
+    for entry in doc["failures"]:
+        assert isinstance(entry, dict) and entry.get("url"), entry
+        assert "status" in entry
+
+
+def test_summarise_run_honours_an_explicit_data_dir(tmp_path):
+    out = _build_fixture_site(tmp_path)
+    summary = tmp_path / "summary.md"
+    r = subprocess.run(
+        [sys.executable, "pipeline/summarise_run.py", "--data", str(out),
+         "--summary-file", str(summary)],
+        capture_output=True, text=True, cwd=REPO_ROOT,
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+    text = summary.read_text(encoding="utf-8")
+    assert "NFL data refresh" in text
+    assert "No manifest" not in text, "--data was ignored"

@@ -32,7 +32,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install test dependencies
-        run: python3 -m pip install --quiet pytest
+        run: python3 -m pip install --quiet pytest PyYAML
 
       - name: Run unit tests
         run: python3 -m pytest tests -q

@@ -149,7 +149,15 @@ A mirror is only trustworthy if its IDs really are the league's IDs. This was ch
 The league's own Game Book is keyed by exactly the UUID the mirror reports. The linkage is
 genuine.
 
-### Endpoints probed directly (2026-09-25)
+### Endpoints probed directly
+
+These are not transcribed from a one-off `curl`. `pipeline/fetch_nfl_official.py
+--probe` re-makes every one of these requests on each build, and the observed statuses
+are written to `docs/data/manifest.json -> official_api.probes`, which the site's Sources
+page renders. No credentials are sent. The rows below are what was observed on
+2026-09-25; the live table on the site shows what the most recent build saw. If a probe
+cannot run — for example a runner with no egress — it records *"not reachable, no
+conclusion drawn"* rather than repeating an old result.
 
 | Request | Observed | Conclusion |
 |---|---|---|
@@ -191,8 +199,14 @@ Enforced in code, not just in intent:
    Sources page.
 7. **Links are fetched, not assumed.** `pipeline/verify_links.py` performs real HTTP
    requests against the nfl.com URLs this project constructs and records the outcome.
-   A link proven not to resolve is hidden rather than shown broken.
-8. **Cross-checks against the league are wired up.** Set `NFL_API_CLIENT_ID` and
+   A link proven not to resolve is hidden rather than shown broken. Checks that got *no*
+   response at all are recorded separately as inconclusive and never hide a link — a
+   network problem on our side is not evidence about the NFL.
+8. **The feed outranks the link check.** A pattern is declared broken only on three or
+   more genuine HTTP failures with zero successes. An unreachable host cannot abort a
+   refresh, because stopping the feed over a link-check outage would trade a cosmetic
+   problem for the one thing this project exists to provide.
+9. **Cross-checks against the league are wired up.** Set `NFL_API_CLIENT_ID` and
    `NFL_API_CLIENT_SECRET` as repository secrets and every refresh diffs official
    `api.nfl.com` scores against the mirror and flags any disagreement.
 

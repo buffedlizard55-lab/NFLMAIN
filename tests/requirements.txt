@@ -1,2 +1,5 @@
 # Test-only dependencies.
 pytest>=7.0
+# Used only to validate .github/workflows/*.yml. A malformed workflow fails in 0s with an
+# opaque message and silently disables the whole feed, so it is worth testing.
+PyYAML>=6.0

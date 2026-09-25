@@ -75,7 +75,7 @@ jobs:
             echo "Nothing to commit - those seasons were already built."
             exit 0
           fi
-          git commit -m "feat(data): backfill play-by-play (${{ inputs.seasons }}${{ inputs.all_seasons }}) [skip ci]
-
-Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          git commit \
+            -m "feat(data): backfill play-by-play (${{ inputs.seasons }}${{ inputs.all_seasons }}) [skip ci]" \
+            -m "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           git push origin HEAD:${{ github.ref_name }}
