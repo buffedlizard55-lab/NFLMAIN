@@ -53,6 +53,26 @@ gives clean URLs. Until then everything works; the URLs just carry `/docs/`.
 A `.nojekyll` file is committed at the repository root so Pages serves the site as plain
 static files instead of running Jekyll over it.
 
+### CI-ops knowledge (learned 2026-09-25, session 3)
+
+* **`gh pr merge --squash` inherits the branch's commit titles into the merge message.**
+  When a branch contains a bot data commit (`chore(data): refresh … [skip ci]`), the
+  squash message picks up that `[skip ci]` and GitHub then skips the push-triggered
+  `Tests` and `Refresh NFL data` workflows on main. Observed on PR #3 (all three checks
+  were green on the identical tree in the PR, so nothing was unverified, but the
+  post-merge runs did not fire). **Convention: always merge with an explicit clean
+  message:** `gh pr merge N --squash -t "<title>" -b "<body without [skip ci]>"`.
+* **The automation token can change repo contents but not repo settings or workflow
+  dispatches:** `PUT /repos/.../pages` → 403 and `POST /actions/workflows/.../dispatches`
+  → 403 ("Resource not accessible by integration"). A human is needed for the Priority-0
+  Pages-folder change and for any manual re-trigger outside scheduled windows.
+* **Build sandbox network reality:** `github.com` is reachable; the release-asset host
+  `objects.githubusercontent.com` and `nfl.com` are NOT, so live builds and link checks
+  only run in CI. Release metadata (publish times, digests) IS checkable from the sandbox
+  via `gh api repos/nflverse/nflverse-data/releases/tags/...` - use it to prove snapshot
+  freshness (done on 2026-09-25: upstream `games.csv` republished 16:36Z, manifest digest
+  `fba617ba87b0cc7c…` matched the current `play_by_play_2026.csv.gz`).
+
 ---
 
 ## Priority 1 — do this next session
