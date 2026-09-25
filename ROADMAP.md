@@ -23,11 +23,14 @@ NFL, with no fabrication.*
 | Optional `api.nfl.com` cross-check | `pipeline/fetch_nfl_official.py`; activates when credentials are present as secrets |
 | GitHub Pages site (4 pages) | Scoreboard, game detail, archive, sources & verification. Vanilla HTML/CSS/JS, zero third-party runtime |
 | Scheduled refresh | `refresh-data.yml`, crons tuned to real NFL game windows, commits only on change |
-| Test suite | 69 tests covering null discipline, status derivation, link construction, aggregation, workflow-file validity, and a full offline build |
+| Test suite | 94 tests (as of 2026-09-25) covering null discipline, status derivation, link construction, aggregation, report/index honesty, workflow-file validity, and a full offline build |
 | Frontend executed in CI | `tests/frontend_smoke.js` runs the site's real JS against a real build through a DOM shim and fails if `undefined` / `NaN` / `[object Object]` reaches the screen, or if a page renders empty |
 | Link checking cannot take the feed down | Inconclusive checks (no HTTP response) are recorded separately from real failures; a pattern is only declared broken on 3+ genuine HTTP failures with zero successes |
 | api.nfl.com evidence is reproducible | `probe_endpoints()` re-makes the probe requests on every build; the Sources page renders the observed statuses rather than a remembered table |
 | Live-build assertion in CI | `tests.yml` builds against the **real** feeds and fails if seasons/games/plays counts are implausible or if a fixture was used |
+| Derived standings table on the archive page (pipeline 1.1.0) | Computed client-side from the published Final regular-season games only; teams with incomplete rows are counted, not guessed; the section states its derivation and links to the official nfl.com standings. Regression-covered by a frontend smoke check that recomputes the tally independently |
+| Report legend now matches the flags the pipeline emits (1.1.0) | `render_report()` no longer describes a `final-game-with-tied-score` kind that was retired; it documents `tied-game` (legal NFL result), `postseason-game-with-tied-score`, kickoff-time flags and quarter-line flags. Pinned by `test_report_legend_describes_the_kinds_the_pipeline_emits` |
+| Play-by-play audit fields are honest (1.1.0) | `pbp.bytes` stays the download size (an earlier build overwrote it with the last written file); `pbp.written_bytes` accumulates JSON sizes; `seasons/index.json → has_pbp_file` now reflects real per-season files, and the index is rewritten after the GAME_END merge |
 
 ---
 
@@ -90,12 +93,16 @@ field list in `pipeline/normalize.py::_PLAY_PASSTHROUGH` rather than dropping ga
 
 ## Priority 2 — real usability gains
 
-### 2.1 Standings
-The archive page has the raw material (every result, every season) but no standings table.
-Deriving W/L/T, win %, division and conference rank, and playoff seeds from completed games
-is straightforward and is exactly the kind of thing people check daily.
-*Derive it from the games we already have — do not scrape a separate standings source, so
-there is one provenance chain.*
+### 2.1 Standings — overall table DONE (1.1.0); divisions remain
+The archive page now shows a per-season overall W/L/T, win pct, PF/PA/DIFF table derived
+only from games the archive marks Final — one provenance chain, no scraping.
+
+Remaining and deliberately NOT faked: division/conference rank and playoff seeds. The
+league's divisional alignments changed historically (no NFC/AFC North before 2002), and
+the current alignment from `teams_colors_logos.csv` must not be projected backwards onto
+older seasons — that would invent structure the source does not carry. To do it right:
+snapshot the per-season alignment from an official source (each season's game pages carry
+that season's standings blocks), store it as data, then derive divisions from it.
 
 ### 2.2 Team pages
 Filter by team exists on the scoreboard, but a dedicated team view (season schedule,
@@ -160,15 +167,28 @@ would exceed it, rather than letting the repository grow until Pages slows down.
 | **No `pages: write` permission** | Cannot repoint Pages at `/docs` automatically | Root `index.html` redirect makes the canonical URL work regardless; a human can change the setting (Priority 0) |
 | **Legacy club codes have no team page** | 1,043 of 15,096 team slots (OAK, SD, STL, LV) had no nfl.com team link | Fixed by mapping relocated franchises to their current city, verified from nfl.com's own standings block on a 1999 game page |
 | **Legal / trademark** | Takedown risk | Independent, non-commercial, attributed, every record links back to nfl.com, README states it will be removed on request |
-| **Build sandbox has no egress to nfl.com** | Cannot verify live locally | CI performs a real live build with assertions; `verify_links.py` does real HTTP checks in CI |
+| **Build sandbox has no egress to nfl.com or to `objects.githubusercontent.com`** | Cannot run the live pipeline or link checks locally; verified 2026-09-25 (`github.com` answers 200, the release-asset host and nfl.com are blocked) | CI performs a real live build with assertions; `verify_links.py` does real HTTP checks in CI; release metadata (digests, publish times) IS reachable via the GitHub API, so upstream freshness is verifiable from the sandbox |
 
 ---
+
+## Manual triage log
+
+Entries here are how flagged irregularities get *closed out*, not edited away. The
+generated report itself is never hand-edited.
+
+| Date | Flag | Finding | Evidence |
+|---|---|---|---|
+| 2026-09-25 (session 3) | `tied-game` × 15 | All sampled ties are real, legal results — the flags are informational | Fetched official Game Center pages: <https://www.nfl.com/games/packers-at-cowboys-2025-reg-4> shows GB 40, DAL 40, OT, AT&T Stadium and <https://www.nfl.com/games/seahawks-at-cardinals-2016-reg-7> shows SEA 6, ARI 6, OT, State Farm Stadium — both exactly matching the published records (scores, week, date, venue). Every flagged game also carries `overtime: true`, consistent with ties ending in OT |
+| 2026-09-25 (session 3) | feed freshness | Upstream `games.csv` was republished at 16:36Z, after the 16:06Z snapshot (digest `360038990f9f7360…` vs the manifest's `1a0a77e790157bea…`) — the committed data is one refresh behind, not wrong | `gh api repos/nflverse/nflverse-data/releases/tags/schedules`; `play_by_play_2026.csv.gz` digest DOES match the manifest (`fba617ba87b0cc7c…`). The next scheduled refresh (and the post-merge CI run) picks the new CSV up |
 
 ## Definition of done for the next session
 
 1. `refresh-data.yml` is green on at least three consecutive scheduled runs.
-2. `reports/verification.md` shows the current week's games with no unexplained flags.
+2. `reports/verification.md` shows the current week's games with no unexplained flags
+   (the 15 `tied-game` flags are triaged above — verify the report regenerates with the
+   corrected legend text from pipeline 1.1.0).
 3. Opening a live game shows plays appearing without a manual reload.
 4. Play-by-play is built for at least the current plus two prior seasons.
-5. Standings (2.1) are on the archive page.
+5. ~~Standings on the archive page~~ — done overall in 1.1.0; remaining: divisional
+   standings from per-season alignment data (see 2.1).
 6. Every irregularity in the report has either been explained or fixed upstream.

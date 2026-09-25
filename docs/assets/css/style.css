@@ -389,6 +389,13 @@ details.detail { border: 1px solid var(--line); border-radius: var(--radius-sm);
 details.detail > summary { cursor: pointer; padding: 10px 12px; font-weight: 700; font-size: 13.5px; }
 details.detail > div { padding: 0 12px 12px; font-size: 13px; color: var(--text-dim); }
 
+/* Derived standings on the archive page */
+#standingsSection .muted { color: var(--text-faint); font-weight: 500; }
+table.standings tr.standings-row { cursor: pointer; }
+table.standings tr.standings-row.is-selected td { background: #2a100d; }
+table.standings td.rank { color: var(--text-faint); width: 2.2em; }
+table.standings td.team { white-space: nowrap; }
+
 .sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;

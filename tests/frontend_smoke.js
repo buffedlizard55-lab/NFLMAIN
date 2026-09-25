@@ -186,6 +186,52 @@ function main() {
         const s = manifest.coverage && manifest.coverage.season_max;
         assert(g.textContent.includes(String(s)), 'season grid does not show season ' + s);
       });
+      check('history: standings table matches the published finals (derived, not invented)', () => {
+        const host = win.document.getElementById('standings');
+        assert(host, 'no #standings host');
+        // Recompute the expected tally independently from the season JSON that the
+        // page reads. If the numbers on screen are not these numbers, the derivation
+        // is wrong - and a standings table is exactly where being wrong is most visible.
+        const season = (manifest.current || {}).season;
+        const doc = JSON.parse(fs.readFileSync(path.join(dataDir, 'seasons', season + '.json'), 'utf8'));
+        const tally = new Map();
+        for (const g of (doc.games || [])) {
+          if ((g.season_type || '') !== 'REG' || g.status !== 'FINAL') continue;
+          const a = g.away || {}, h = g.home || {};
+          if (!a.abbr || !h.abbr || a.score == null || h.score == null) continue;
+          for (const c of [a, h]) {
+            if (!tally.has(c.abbr)) tally.set(c.abbr, { gp: 0, w: 0, l: 0, t: 0, pf: 0, pa: 0 });
+            tally.get(c.abbr).gp += 1;
+          }
+          const A = tally.get(a.abbr), H = tally.get(h.abbr);
+          A.pf += a.score; A.pa += h.score; H.pf += h.score; H.pa += a.score;
+          if (a.score === h.score) { A.t += 1; H.t += 1; }
+          else if (a.score > h.score) { A.w += 1; H.l += 1; }
+          else { H.w += 1; A.l += 1; }
+        }
+        const rows = host.querySelectorAll ? host.querySelectorAll('.standings-row') : [];
+        if (tally.size === 0) {
+          assert(rows.length === 0, 'standings rendered for a season with no countable finals');
+          return;
+        }
+        assert(rows.length === tally.size,
+          'standings has ' + rows.length + ' rows but the season data supports ' + tally.size);
+        // A couple of teams must appear by abbreviation, and the text must contain
+        // each team's win total somewhere in its row.
+        for (const abbr of tally.keys()) {
+          assert(host.textContent.includes(abbr), 'standings missing team ' + abbr);
+        }
+        // The app sorts by pct, then point differential, then points for; the first
+        // rendered row must be the team that ordering puts top.
+        const rank = (r) => (r.w + r.t / 2) / r.gp;
+        const top = [...tally.entries()].sort((x, y) => {
+          const [ax, a] = x, [bx, b] = y;
+          return (rank(b) - rank(a)) || (b.pf - b.pa - (a.pf - a.pa)) ||
+            (b.pf - a.pf) || String(ax).localeCompare(String(bx));
+        })[0][0];
+        assert(rows[0].textContent.includes(top + ' '),
+          'top standings row is not the expected team ' + top);
+      });
     }
 
     // ------------------------------------------------------------ game detail

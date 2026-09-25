@@ -91,7 +91,8 @@ game day. This project collapses that into one page that is always current and a
 traceable to the league's own record.
 
 * **Scoreboard** — the current week, live, auto-refreshing every 60 seconds.
-* **Archive** — every game, every week, every season from 1999 onward.
+* **Archive** — every game, every week, every season from 1999 onward, with a standings
+  table per season derived only from games the archive marks Final.
 * **Game detail** — full play-by-play with filters, drives, team stats and stat leaders.
 * **Sources & verification** — the provenance chain, the HTTP evidence behind each claim,
   link-check results and every irregularity currently flagged.

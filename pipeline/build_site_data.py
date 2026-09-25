@@ -211,11 +211,15 @@ def determine_current(by_season: dict, now: _dt.datetime) -> dict:
     live_or_done = [g for g in reg if g["status"] in ("FINAL", "IN_PROGRESS")]
     scheduled = [g for g in reg if g["status"] == "SCHEDULED"]
 
-    if live_or_done:
-        week = max(g["week"] for g in live_or_done if g.get("week") is not None)
-    elif scheduled:
-        week = min(g["week"] for g in scheduled if g.get("week") is not None)
+    live_weeks = [g["week"] for g in live_or_done if g.get("week") is not None]
+    sched_weeks = [g["week"] for g in scheduled if g.get("week") is not None]
+    if live_weeks:
+        week = max(live_weeks)
+    elif sched_weeks:
+        week = min(sched_weeks)
     else:
+        # No usable week anywhere in the current season: fall back to week 1 rather
+        # than crashing. The scoreboard then simply shows whatever is tagged week 1.
         week = 1
 
     return {"season": season, "season_type": season_type, "week": week}
@@ -238,8 +242,24 @@ def build_scoreboard(by_season: dict, current: dict) -> dict:
     }
 
 
-def build_season_index(by_season: dict, current: dict, now: _dt.datetime) -> dict:
+def build_season_index(by_season: dict, current: dict, now: _dt.datetime,
+                       pbp_dir: Optional[str] = None) -> dict:
     seasons = []
+    # has_pbp_file must answer "is there a real per-game play-by-play file for this
+    # season in the published data?", not "does the pbp directory exist?". A previous
+    # revision claimed true for every season >= 1999 the moment the directory existed,
+    # which would have let a future UI assert availability that was not real.
+    pbp_files = []
+    if pbp_dir and os.path.isdir(pbp_dir):
+        pbp_files = os.listdir(pbp_dir)
+
+    def season_has_pbp(season: int) -> bool:
+        if season < S.EARLIEST_PBP_SEASON:
+            return False
+        prefix = f"{season}_"
+        return any(name.startswith(prefix) and name.endswith(".json")
+                   for name in pbp_files)
+
     for season in sorted(by_season, reverse=True):
         games = by_season[season]
         weeks = weeks_for(games)
@@ -251,9 +271,11 @@ def build_season_index(by_season: dict, current: dict, now: _dt.datetime) -> dic
             "game_count": len(games),
             "status_counts": counts,
             "season_types": {k: v for k, v in weeks.items()},
-            "has_pbp_file": os.path.exists(
-                os.path.join(DEFAULT_OUT, "pbp")
-            ) and season >= S.EARLIEST_PBP_SEASON,
+            "has_pbp_file": season_has_pbp(season),
+            "pbp_file_count": sum(
+                1 for name in pbp_files
+                if name.startswith(f"{season}_") and name.endswith(".json")
+            ),
         })
     return {
         "generated_at": now.isoformat(timespec="seconds").replace("+00:00", "Z"),
@@ -279,6 +301,7 @@ def load_pbp_for_season(loader: Loader, season: int, games: list, out_dir: str,
         "unknown_game_ids": [],
         "error": None,
         "bytes": 0,
+        "written_bytes": 0,
         "derived": {},
     }
     if not games:
@@ -334,7 +357,10 @@ def load_pbp_for_season(loader: Loader, season: int, games: list, out_dir: str,
         doc = build_game_pbp(compacted, index[gid], url, list(header))
         doc["pbp"]["plays"] = compacted
         path = os.path.join(out_dir, "pbp", f"{gid}.json")
-        stat["bytes"] = write_json(path, doc)
+        # `stat["bytes"]` is the DOWNLOAD size and must stay that way: an earlier
+        # revision reassigned it to the last written file, silently corrupting the
+        # audit trail. Written size is a separate, accumulated number.
+        stat["written_bytes"] += write_json(path, doc)
         written += 1
 
         # Feed the PBP-derived facts back into the scoreboard record so game cards can
@@ -626,27 +652,53 @@ def render_report(ctx: dict) -> str:
         a("")
         a("### How to read these")
         a("")
+        a("The kinds below are exactly the ones `normalize.py` emits; this table is kept "
+          "in sync with the legend on the site's Sources page. When the pipeline gains a "
+          "new flag kind, this table and `docs/assets/js/sources.js` must gain a row too.")
+        a("")
         a("| Kind | Meaning | Action |")
         a("|---|---|---|")
+        a("| `tied-game` | A FINAL regular-season game with equal scores. This is a LEGAL "
+          "NFL result: since 1974 a regular-season game still level after one overtime "
+          "period is recorded as a tie, and the league's own standings carry a ties "
+          "column. Listed for transparency, not because it is wrong. | No action; the "
+          "official Game Center page is linked on every record. Sampled and confirmed on "
+          "nfl.com on 2026-09-25 (GB 40 DAL 40, 2025 wk 4; SEA 6 ARI 6, 2016 wk 7). |")
+        a("| `postseason-game-with-tied-score` | A FINAL POSTSEASON game with equal "
+          "scores, which cannot happen: playoff overtime continues until a team scores. "
+          "| Verify against the official NFL game page; escalate upstream if nfl.com "
+          "also shows a tie. |")
         a("| `past-window-without-score` | Kickoff is more than 4h45m in the past but no "
           "score is published upstream. Usually a postponed/cancelled game, or the mirror "
           "has not caught up. | Compare against "
           "<https://www.nfl.com/scores/>. |")
         a("| `score-recorded-before-kickoff` | A score exists for a game whose kickoff is "
           "more than 6h in the future. | Check the upstream `gameday`/`gametime`. |")
-        a("| `final-game-with-tied-score` | A game marked FINAL has equal scores, which is "
-          "impossible in the NFL. | Verify against the official NFL game page. |")
+        a("| `missing-kickoff-time` | Neither a score nor a usable kickoff date exists "
+          "upstream, so the status cannot be stated honestly. | Check the official "
+          "scoreboard if a link is present; otherwise the row is unfixable here. |")
+        a("| `score-without-kickoff-time` | A score exists but no kickoff time was "
+          "published upstream (common for older seasons). Status is FINAL on the score "
+          "alone and marked estimated. | None; this is normal in the historical archive. |")
+        a("| `missing-game-id` / `missing-team-abbreviation` | An upstream row is missing "
+          "its identity fields. | Upstream data bug; report to nflverse. |")
+        a("| `unknown-team-abbreviation:XXX` | A team code in the feed is not in the teams "
+          "metadata. | Add the mapping; do not guess a name. |")
         a("| `result-does-not-match-scores` | Upstream `result` column disagrees with "
           "`home_score - away_score`. | Upstream data bug; report to nflverse. |")
         a("| `missing-nfl-gsis-old-game-id` | No NFL GSIS 10-digit id, so the record "
           "cannot be linked to an official NFL identifier. | Expected for some preseason "
           "games. |")
-        a("| `unknown-team-abbreviation` | A team code in the feed is not in the teams "
-          "metadata. | Add the mapping; do not guess a name. |")
         a("| `pbp-*-disagrees-with-schedule` | The play-by-play running score does not end "
           "at the scheduled final score. | Treat the game as suspect until reconciled. |")
+        a("| `quarter-line-*-disagrees-with-schedule` | The per-quarter line derived from "
+          "the play-by-play does not sum to the schedule's final score. | Compare against "
+          "the quarter line on the official Game Center page. |")
         a("| `nfl-api-id-mismatch-between-schedule-and-pbp` | The two feeds disagree on "
           "the official NFL game UUID. | Blocks api.nfl.com cross-referencing. |")
+        a("| `pbp-missing-required-columns:...` | Upstream play-by-play schema no longer "
+          "carries a required column; that season's build is refused. | Update "
+          "`PBP_REQUIRED_COLUMNS` after reading the new header. |")
         a("| `pbp-empty` | A play-by-play file was written with zero plays. | Upstream "
           "has not published the game yet. |")
         a("")
@@ -689,9 +741,12 @@ def collect_irregularities(by_season: dict, pbp_stats: list) -> dict:
                     "season_type": g.get("season_type"),
                     "week": g.get("week"),
                 })
-    for st in pbp_stats:
-        for kind in ("pbp-empty", "pbp-missing-required-columns"):
-            pass
+    # NOTE: play-by-play-derived flags (pbp-empty, score disagreements, ...) reach the
+    # game records via the "3b merge" step in main(), which runs before this function,
+    # so iterating them off the by-season graph above already counts them. An earlier
+    # revision had a loop over pbp_stats here that did nothing; it was removed rather
+    # than implemented, because a season-level failure is reported on the season, not
+    # fabricated onto games that were never written.
     return {"total": len(items), "by_kind": by_kind, "items": items}
 
 
@@ -764,7 +819,7 @@ def main(argv=None) -> int:
     }
     write_json(os.path.join(args.out, "scoreboard.json"), scoreboard)
 
-    index = build_season_index(by_season, current, now)
+    index = build_season_index(by_season, current, now, os.path.join(args.out, "pbp"))
     write_json(os.path.join(args.out, "seasons", "index.json"), index)
 
     # 3. play-by-play ------------------------------------------------------ #
@@ -842,6 +897,13 @@ def main(argv=None) -> int:
             "official_review_url": S.nfl_scores_url(),
         }
         write_json(os.path.join(args.out, "scoreboard.json"), scoreboard)
+
+    # 3c. refresh the season index so status counts and play-by-play availability
+    #     reflect what the merge actually wrote: the step-2 index was built before
+    #     GAME_END markers could flip any IN_PROGRESS game to FINAL, and before this
+    #     run's pbp files existed. Publishing a stale index would understate coverage.
+    index = build_season_index(by_season, current, now, os.path.join(args.out, "pbp"))
+    write_json(os.path.join(args.out, "seasons", "index.json"), index)
 
     # 4. official API cross-check ------------------------------------------ #
     http_util.log("[4/5] official NFL API")
