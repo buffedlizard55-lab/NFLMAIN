@@ -211,7 +211,7 @@ conclusion drawn"* rather than repeating an old result.
 | `GET nfl.com/liveupdate/scorestrip/ss.json` | Resolved to the nfl.com homepage | **Legacy liveupdate feed is retired — do not use** |
 | `GET nflverse-data/releases/tag/pbp` assets | `play_by_play_1999.*` … `play_by_play_2026.*` | 28 seasons of play-by-play confirmed present |
 | `play_by_play_2026.csv.gz` last-published | `2026-09-25T04:32:51Z` (during verification) | The feed updates intra-day while games are played |
-| `GET nfl.com/schedules/2026/by-week/week-3` | HTTP 200, 2,443,091 bytes, SHA-256 `9c90cd6fa7f66a48…`, 16 games parsed | **Works with no credentials.** This is the direct read. Across the two weeks read: 32 games on the league's pages, 17 comparable, **17 scores matched, 0 disagreed**, 17 statuses confirmed, 0 games listed that we lack |
+| `GET nfl.com/schedules/2026/by-week/week-3` | HTTP 200, 16 games parsed; the size and SHA-256 of that read are recorded in `docs/data/official/index.json`, not copied here, because they change on every read | **Works with no credentials.** This is the direct read. Across the two weeks read: 32 games on the league's pages, 17 comparable, **17 scores matched, 0 disagreed**, 17 statuses confirmed, 0 games listed that we lack |
 | `GET static.www.nfl.com/image/upload/gamecenter/{nfl_api_id}.pdf` (no version stamp) | HTTP 200, the NFL's own Game Summary document (4 of 4 sampled) | **Works without the Cloudinary version stamp**, so the pipeline builds the Game Book link itself instead of sending you to click through a page |
 | `GET nfl.com/schedules/2010/by-week/week-3` and 17 more week pages | HTTP 200 (18 of 18 sampled) | The week-page pattern holds across seasons, which is why links are built for 2010 onward and not for 1999-2009 |
 
