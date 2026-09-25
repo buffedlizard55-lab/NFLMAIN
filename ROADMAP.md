@@ -23,13 +23,16 @@ NFL, with no fabrication.*
 | Optional `api.nfl.com` cross-check | `pipeline/fetch_nfl_official.py`; activates when credentials are present as secrets |
 | GitHub Pages site (4 pages) | Scoreboard, game detail, archive, sources & verification. Vanilla HTML/CSS/JS, zero third-party runtime |
 | Scheduled refresh | `refresh-data.yml`, crons tuned to real NFL game windows, commits only on change |
-| Test suite | 94 tests (as of 2026-09-25) covering null discipline, status derivation, link construction, aggregation, report/index honesty, workflow-file validity, and a full offline build |
+| Test suite | 120 tests (as of 2026-09-25) covering null discipline, status derivation, link construction, aggregation, report/index honesty, workflow-file validity, the direct nfl.com reader, the identifier correction, same-week scoping, partial-audit honesty, and a full offline build |
 | Frontend executed in CI | `tests/frontend_smoke.js` runs the site's real JS against a real build through a DOM shim and fails if `undefined` / `NaN` / `[object Object]` reaches the screen, or if a page renders empty |
 | Link checking cannot take the feed down | Inconclusive checks (no HTTP response) are recorded separately from real failures; a pattern is only declared broken on 3+ genuine HTTP failures with zero successes |
 | api.nfl.com evidence is reproducible | `probe_endpoints()` re-makes the probe requests on every build; the Sources page renders the observed statuses rather than a remembered table |
 | Live-build assertion in CI | `tests.yml` builds against the **real** feeds and fails if seasons/games/plays counts are implausible or if a fixture was used |
 | Derived standings table on the archive page (pipeline 1.1.0) | Computed client-side from the published Final regular-season games only; teams with incomplete rows are counted, not guessed; the section states its derivation and links to the official nfl.com standings. Regression-covered by a frontend smoke check that recomputes the tally independently |
 | Report legend now matches the flags the pipeline emits (1.1.0) | `render_report()` no longer describes a `final-game-with-tied-score` kind that was retired; it documents `tied-game` (legal NFL result), `postseason-game-with-tied-score`, kickoff-time flags and quarter-line flags. Pinned by `test_report_legend_describes_the_kinds_the_pipeline_emits` |
+| Direct read of the league's own site, no credentials (1.2.0) | `pipeline/nfl_direct.py` fetches `nfl.com/schedules/{season}/by-week/{week}` on every build and diffs it against what is published. Published snapshot: 2 week pages (both HTTP 200), 32 games read, 17 scores compared, **17 matched, 0 disagreed**, 17 statuses confirmed, 0 games the league lists that we lack, 0 club names unresolved. Size and SHA-256 of every read live in `docs/data/official/index.json` rather than being copied into prose, because they change on every read. Published under `docs/data/official/`, rendered on the Sources page |
+| Official Game Book PDF linked from every game that has an NFL game UUID (1.2.0) | The version-less Cloudinary URL was fetched and served the NFL's own Game Summary for `2026_01_ARI_LAC` - quarter line, eight scoring plays and final individual statistics all matching our record. `verify_links.py` now fetches a sample of these PDFs for real |
+| The `nfl_detail_id` mix-up found and corrected (1.2.0) | Proved on two 2021 pages that the schedule feed's `nfl_detail_id` does **not** key the Game Book (`10160000-0585-0395-7f87-0c3334b38e2e` vs `c5722300-b37c-11eb-9617-afa9727fab42.pdf` for `2021_01_DAL_TB`). The column is stored under its own name, the UUID comes only from the play-by-play feed, and the finding is published as a data caveat with its evidence |
 | Play-by-play audit fields are honest (1.1.0) | `pbp.bytes` stays the download size (an earlier build overwrote it with the last written file); `pbp.written_bytes` accumulates JSON sizes; `seasons/index.json → has_pbp_file` now reflects real per-season files, and the index is rewritten after the GAME_END merge |
 
 ---
@@ -66,12 +69,46 @@ static files instead of running Jekyll over it.
   dispatches:** `PUT /repos/.../pages` → 403 and `POST /actions/workflows/.../dispatches`
   → 403 ("Resource not accessible by integration"). A human is needed for the Priority-0
   Pages-folder change and for any manual re-trigger outside scheduled windows.
+* **A link audit can outrun its job.** Adding the Game Book PDFs and the week pages to
+  `verify_links.py` pushed a refresh run past its 25-minute timeout: the step was still
+  going after 20 minutes. The audit is sampled by design, so it is now **bounded by
+  design**: `--budget-seconds` (default 420) and anything not reached is recorded as
+  `not_checked_for_budget` with `complete: false`, which the Sources page shows as an
+  incomplete audit. After the fix the same audit took **138.8s for 125 requests, 125 ok**.
+  Never let a check be able to kill the thing it is checking.
+* **A long refresh can lose the race with a human push.** Run 36172463592 (2026-09-25) and
+  again 36174906146 came out red at the *Commit and publish* step. In both cases the build,
+  the whole link audit and the test suite had already passed - a manual push simply landed
+  on the branch first, so the bot's commit could not fast-forward. **Fixed:** the publish
+  step now rebases onto whatever landed and retries up to three times, and fails loudly
+  with an explicit message if it genuinely cannot publish (a real conflict in the generated
+  data). If a refresh run is still red at that step, check whether the branch moved
+  underneath it before assuming the data is wrong.
+* **Read the artefact, not just the code.** Three of the defects fixed in this session
+  (chrome labels parsed as team names, a whole game missed, another week's slate counted as
+  this week's) were invisible in the source and obvious in `docs/data/official/`. The
+  audit output is there to be read, and reading it is part of the work.
 * **Build sandbox network reality:** `github.com` is reachable; the release-asset host
   `objects.githubusercontent.com` and `nfl.com` are NOT, so live builds and link checks
   only run in CI. Release metadata (publish times, digests) IS checkable from the sandbox
   via `gh api repos/nflverse/nflverse-data/releases/tags/...` - use it to prove snapshot
   freshness (done on 2026-09-25: upstream `games.csv` republished 16:36Z, manifest digest
   `fba617ba87b0cc7c…` matched the current `play_by_play_2026.csv.gz`).
+
+---
+
+## Priority 0.5 — retractions and corrections that are still open
+
+These are things this project previously stated or assumed that turned out to be wrong.
+They are listed here so nobody re-introduces them.
+
+| Item | Status |
+|---|---|
+| `nfl_detail_id` treated as the NFL API game UUID | **Fixed in code (1.2.0).** Blast radius was zero: the only release that used it was never merged to `main`, and the wrong links were never rendered. The evidence and the corrected behaviour are in `manifest.data_caveats`. |
+| `missing-nfl-api-id` fired on every pre-2021 game | **Fixed (1.2.0).** 5,000 flags that would have hidden the ones that matter; replaced with `pbp-built-without-nfl-api-id`, which only fires when a game has a full play-by-play feed and the UUID should be there. |
+| The report's legend promised a `nfl-api-id-mismatch-between-schedule-and-pbp` check | **Fixed (1.2.0).** The check could never fire, because the identifier had already been stripped from every play before it ran. It is replaced by checks that can fire: within-page identifier shape, and the documented difference between the two feeds' identifier families. |
+| The direct reader took the first accessible name in a game tile | **Fixed (1.2.0).** It reported the away team of the 2026 week-3 Thursday game as "Watch Replay, Falcons". Labels are now stripped of nfl.com's control wording and the most informative candidate wins. |
+| The direct reader missed a game on the page it read | **Fixed (1.2.0).** The international game (Ravens at Cowboys, Rio de Janeiro) is rendered in a different template, so the week's slate was one game short. A second pass now scans for canonical game slugs anywhere in the markup. |
 
 ---
 
@@ -90,6 +127,20 @@ written. The code path exists; it just needs credentials.
 **Blocker:** the NFL does not grant public API access; multiple independent reports confirm
 access is case-by-case for media partners. Until credentials exist, the mirror remains the
 source and this stays off. *This is a business/access blocker, not a code blocker.*
+
+### 1.15 Watch the direct read through a real game window
+The direct read now runs on every refresh and its output is published, but it has only been
+observed on a **completed** week (2026 week 2 and 3). Two things still need a live game to
+be observed rather than assumed:
+
+* that nfl.com's week page shows an in-progress score (so the status correction path
+  actually fires), and
+* that `status-taken-from-nfl-com` appears on a real record and clears the estimate.
+
+If the page publishes no live score until the game ends, then nfl.com gives us no
+in-game advantage over the mirror, and Priority 1.1 (api.nfl.com credentials) becomes the
+only route to a genuinely live status. **Do not claim the direct read gives live in-game
+scores until this is observed.**
 
 ### 1.2 Confirm the live path during a real game
 The pipeline and the 60-second page poll are built, but the first in-season validation
@@ -140,7 +191,21 @@ normalisation for size. Adding a per-play WP chart to the game page is high valu
 analytically-minded users. Decide deliberately which of these to keep, since they are the
 largest contributors to file size.
 
-### 2.5 Game Book PDF deep link
+### 2.5 Game Book PDF deep link — DONE in 1.2.0, one part left
+The version-less URL is confirmed working and is now built and linked for every game whose
+NFL game UUID is known. What remains is **coverage**: the UUID only exists for the current
+season's play-by-play and for 2021 in the schedule feed (and 2021's is the wrong id
+family). Backfilling play-by-play for 2022-2025 would give those games real Game Book links
+and real per-play data at the same time — the highest-value single action left.
+
+*Original note, kept for context: the `{version}` segment is a Cloudinary publish counter
+we cannot construct. That turned out not to matter — the version-less form works.*
+
+### 2.6 Historical game books cannot be addressed by UUID
+For 272 games in 2021 the schedule feed carries `nfl_detail_id`, which is a different
+identifier family and does not key the PDF. Either find a verified way to map a game to its
+Game Book (for example by fetching the official game page and reading the link, once, and
+storing it), or accept that those games have no Game Book link. **Do not construct one.**
 The official Game Book PDF lives at
 `static.www.nfl.com/image/upload/v{version}/gamecenter/{nfl_api_id}.pdf`. The `{version}`
 segment is a Cloudinary version stamp we cannot construct, so the link is currently only

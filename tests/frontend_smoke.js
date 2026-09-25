@@ -114,6 +114,26 @@ function main() {
         assert(sb, 'no #statusbar element');
         assert(sb.textContent.trim().length > 0, 'statusbar empty - snapshot timestamp not rendered');
       });
+      check('scoreboard: the nfl.com direct read is stated, or its absence is', () => {
+        const bar = win.document.getElementById('statusbar');
+        const text = bar.textContent;
+        const d = manifest.official_direct;
+        if (d && d.attempted && d.weeks_read) {
+          if (d.score_mismatches || d.unrecognised_club_names || d.official_unmatched) {
+            assert(/see differences/.test(text),
+              'nfl.com and this build disagree but the scoreboard does not say so');
+          } else {
+            assert(/nfl\.com direct read/.test(text),
+              'the direct read succeeded and the scoreboard does not mention it');
+          }
+          // It must never claim agreement the build did not establish.
+          assert(!/agreed/.test(text) || d.score_mismatches === 0,
+            'the scoreboard claims the league agreed while a mismatch is recorded');
+        } else {
+          assert(!/direct read: ✓ agreed/.test(text),
+            'the scoreboard claims the league confirmed these scores without a read');
+        }
+      });
       check('scoreboard: season selector populated from real seasons', () => {
         const sel = win.document.getElementById('seasonSel');
         assert(sel, 'no #seasonSel');
@@ -145,6 +165,69 @@ function main() {
         const n = (manifest.sources || []).length;
         assert(n > 0, 'manifest has no sources');
         assert(host.textContent.trim().length > 0, 'sourcesHost empty despite ' + n + ' registered sources');
+      });
+      check('sources: direct nfl.com read is rendered, or its absence is stated', () => {
+        const host = win.document.getElementById('directHost');
+        assert(host, 'no #directHost in sources.html');
+        const d = manifest.official_direct;
+        const text = host.textContent;
+        assert(text.trim().length > 0,
+          'directHost is empty - the page shows neither a result nor an explanation');
+        if (!d || !d.attempted) {
+          // Silence must never be the answer: the page has to say the read did not run.
+          assert(/No direct read was performed|carries no direct-read result/.test(text),
+            'no direct read happened and the page does not say so');
+          return;
+        }
+        // When a read happened, the numbers on screen must be the manifest's numbers.
+        assert(text.includes(String(d.weeks_read)) ,
+          'weeks_read=' + d.weeks_read + ' is not shown');
+        if (d.score_mismatches) {
+          assert(text.includes(String(d.score_mismatches)),
+            'a real disagreement with nfl.com is not surfaced on the Sources page');
+          (d.disagreements || []).slice(0, 3).forEach((row) => {
+            assert(!row.detail || text.includes(row.detail.slice(0, 40)),
+              'a disagreement row from the manifest is missing from the page');
+          });
+        }
+      });
+      check('sources: direct-read panel never claims agreement it did not establish', () => {
+        const d = manifest.official_direct || {};
+        const text = win.document.getElementById('directHost').textContent;
+        if (!d.attempted || !d.weeks_read) {
+          assert(!/every score nfl\.com published[^.]*matched exactly/.test(text),
+            'the page claims agreement although no read succeeded');
+        }
+      });
+      check('sources: every direct-read row links to the nfl.com page it describes', () => {
+        const d = manifest.official_direct || {};
+        if (!d.attempted) return;
+        (d.documents || []).forEach((doc) => {
+          if (doc.url) {
+            assert(win.document.getElementById('directHost').innerHTML.includes(doc.url),
+              'the nfl.com page ' + doc.url + ' is not linked in the table');
+          }
+        });
+      });
+      check('sources: upstream data corrections are rendered with their evidence', () => {
+        const host = win.document.getElementById('caveatHost');
+        assert(host, 'no #caveatHost in sources.html');
+        const cavs = manifest.data_caveats || [];
+        assert(cavs.length > 0, 'manifest carries no data caveats - the identifier ' +
+          'correction found on 2026-09-25 must be recorded, not dropped');
+        const text = host.textContent;
+        cavs.forEach((c) => {
+          assert(text.includes(c.title), 'caveat title missing: ' + c.title);
+          (c.evidence || []).forEach((u) => {
+            assert(host.innerHTML.includes(u),
+              'the evidence link for ' + c.id + ' is not on the page: ' + u);
+          });
+          Object.keys(c.measured || {}).forEach((k) => {
+            const v = c.measured[k];
+            assert(typeof v !== 'number' || text.includes(v.toLocaleString()),
+              'measured value ' + k + '=' + v + ' is not shown');
+          });
+        });
       });
       check('sources: coverage numbers rendered', () => {
         const host = win.document.getElementById('coverageHost');

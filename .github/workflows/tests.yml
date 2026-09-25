@@ -80,6 +80,74 @@ jobs:
           print("LIVE BUILD OK")
           PY
 
+      - name: Prove the direct nfl.com reader works against the live site
+        # The charter asks for data straight from the NFL. This is the step that proves
+        # the no-credentials reader really does read nfl.com, on every CI run, against
+        # the live site - and that what it reads agrees with the data we just built.
+        # If nfl.com changes its markup, this is where it is caught, not in production.
+        run: |
+          WEEK=$(python3 -c "
+          import json
+          m = json.load(open('/tmp/live-build/manifest.json'))
+          c = m['current']
+          print(c['season'], c['season_type'], c['week'])
+          ")
+          set -- $WEEK
+          echo "Checking official nfl.com read for season=$1 type=$2 week=$3"
+          python3 pipeline/nfl_direct.py --diagnose \
+            --season "$1" --type "$2" --week "$3" --dump-chars 4000
+
+      - name: Diff the official nfl.com read against the published build
+        # Every week the pipeline reads is checked here, not just the current one. The bug
+        # this replaces was invisible on the current week and only appeared on the previous
+        # one, where the page's links to the NEXT week were being counted as its own slate.
+        run: |
+          python3 - <<'PY'
+          import json, sys
+          sys.path.insert(0, 'pipeline')
+          from nfl_direct import fetch_week, crosscheck_week
+
+          m = json.load(open('/tmp/live-build/manifest.json'))
+          cur = m['current']
+          weeks = (m.get('official_direct') or {}).get('weeks_requested') or [cur['week']]
+          print("weeks nfl.com is being read for:", weeks)
+
+          season_doc = json.load(open(f"/tmp/live-build/seasons/{cur['season']}.json"))
+          failures = []
+
+          for week in weeks:
+              ours = [g for g in season_doc['games']
+                      if g.get('week') == week
+                      and g.get('season_type') == cur['season_type']]
+              official = fetch_week(cur['season'], cur['season_type'], week)
+              if not official['ok']:
+                  failures.append(f"week {week}: the direct nfl.com reader returned no games "
+                                  f"({official['error']})")
+                  continue
+              check = crosscheck_week(official, ours)
+              print(f"--- week {week}: {json.dumps({k: v for k, v in check.items() if k != 'rows'})}")
+              if check['mismatched']:
+                  failures.append(f"week {week}: nfl.com disagrees with "
+                                  f"{check['mismatched']} published score(s)")
+              if check['unrecognised_club_names']:
+                  failures.append(f"week {week}: {check['unrecognised_club_names']} club name(s) "
+                                  f"could not be resolved")
+              if check['official_only']:
+                  failures.append(f"week {week}: nfl.com lists {check['official_only']} game(s) "
+                                  f"this build has no record of")
+              if not official['parse'].get('games_parsed'):
+                  failures.append(f"week {week}: no games parsed")
+              if check['comparable'] < 1 and check['official_no_score'] < 1:
+                  failures.append(f"week {week}: nothing was compared")
+
+          if failures:
+              print("::error::Direct nfl.com read failed its checks:")
+              for f in failures:
+                  print("  - " + f)
+              sys.exit(1)
+          print("DIRECT NFL READ OK for weeks", weeks)
+          PY
+
       - name: JavaScript syntax check
         run: |
           for f in docs/assets/js/*.js; do

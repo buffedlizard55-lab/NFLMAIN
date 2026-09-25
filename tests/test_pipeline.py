@@ -351,7 +351,10 @@ def test_normalise_game_uses_the_verified_real_record():
     assert g["game_id"] == "2026_01_ARI_LAC"
     assert g["away"]["score"] == 26 and g["home"]["score"] == 14
     assert g["winner"] == "ARI"
-    assert g["ids"]["nfl_api_id"] == "a9a87603-4feb-11f1-abca-2c54536568a9"
+    # The schedule feed's nfl_detail_id is a different identifier family and is stored
+    # under its own name. This field is filled only by the play-by-play feed.
+    assert g["ids"]["nfl_api_id"] is None
+    assert g["ids"]["nfl_detail_id"] == "a9a87603-4feb-11f1-abca-2c54536568a9"
     assert g["ids"]["nfl_gsis_old_game_id"] == "2026091308"
     assert g["links"]["nfl_game"] == \
         "https://www.nfl.com/games/cardinals-at-chargers-2026-reg-1"
@@ -1132,3 +1135,523 @@ def test_site_never_displays_the_false_claim_that_ties_are_impossible():
         "The site asserts something false about the NFL. Regular-season ties are legal."
     )
     assert "LEGAL NFL result" in src, "the corrected explanation is missing"
+
+
+# --------------------------------------------------------------------------- #
+# Direct read of nfl.com (the league's own site, no credentials)
+# --------------------------------------------------------------------------- #
+#
+# The HTML samples below are written to exercise the parser's exact contract. They are
+# NOT presented as captures of nfl.com's live markup - the live proof is the CI step that
+# runs `pipeline/nfl_direct.py --diagnose` against www.nfl.com on every build run. What
+# these fixtures pin is the behaviour: which parsing strategy is chosen, what is emitted
+# when a page is unreadable, and that nothing is ever invented.
+
+_WEEK_HTML_ARIA = """
+<html><body>
+<a href="/games/dolphins-at-patriots-2025-reg-18"
+   aria-label="Dolphins 10, Patriots 38, FINAL, Sunday, January 4th">...</a>
+<a href="/games/ravens-at-steelers-2025-reg-18"
+   aria-label="Ravens 24, Steelers 26, FINAL, Sunday, January 4th">...</a>
+<a href="/games/bills-at-jets-2026-reg-3"
+   aria-label="Bills at Jets, Sunday, September 27th, 1:00 PM, CBS">...</a>
+<a href="/schedules/2025/by-week/week-17">previous</a>
+</body></html>
+"""
+
+_WEEK_HTML_UNREADABLE = """
+<html><body>
+<div class="nfl-o-matchup"><span>Loading matchups…</span></div>
+<a href="/games/unknown-game">x</a>
+</body></html>
+"""
+
+
+def test_direct_reader_extracts_scores_status_and_kickoff():
+    import nfl_direct as D
+
+    parsed = D.parse_week_html(_WEEK_HTML_ARIA, source_url="https://www.nfl.com/x")
+    games = {g["slug"]: g for g in parsed["games"]}
+    assert len(games) == 3
+
+    fins = games["/games/dolphins-at-patriots-2025-reg-18"]
+    assert (fins["away_abbr"], fins["away_score"]) == ("MIA", 10)
+    assert (fins["home_abbr"], fins["home_score"]) == ("NE", 38)
+    assert fins["status"] == "FINAL"
+    assert fins["method"] == "aria-label"
+
+    upcoming = games["/games/bills-at-jets-2026-reg-3"]
+    assert upcoming["away_abbr"] == "BUF" and upcoming["home_abbr"] == "NYJ"
+    # No score published yet must stay None - never 0, which would read as a real result.
+    assert upcoming["away_score"] is None and upcoming["home_score"] is None
+    assert upcoming["status"] == "SCHEDULED"
+    assert parsed["parse"]["games_parsed"] == 3
+
+
+def test_ui_chrome_labels_never_become_team_names():
+    """These two label strings are copied verbatim out of a real pipeline run against
+    https://www.nfl.com/schedules/2026/by-week/week-3 on 2026-09-25. The first revision of
+    this reader reported the away team of the Thursday game as "Watch Replay, Falcons",
+    because it took the first aria-label in the tile instead of the most informative one.
+    """
+    import nfl_direct as D
+
+    chrome = "Watch Replay, Falcons 35, Packers 14, Thursday, September 24th"
+    real = "Falcons 35, Packers 14, FINAL, Thursday, September 24th"
+    assert D.strip_ui_chrome(chrome) == "Falcons 35, Packers 14, Thursday, September 24th"
+    assert D.strip_ui_chrome(
+        "Tickets, Chargers at Bills, Sunday, September 27th. Opens in a new tab"
+    ) == "Chargers at Bills, Sunday, September 27th"
+    # The stripped chrome version must not be preferred over the real label: the real one
+    # states the status, which the chrome one does not.
+    assert D._candidate_score(D._parse_label(real)) > \
+        D._candidate_score(D._parse_label(chrome))
+
+    html = ('<a href="/games/falcons-at-packers-2026-reg-3" aria-label="' + chrome + '">'
+            '</a><span aria-label="' + real + '"></span>')
+    parsed = D.parse_week_html(html)
+    g = parsed["games"][0]
+    assert g["away_nick"] == "Falcons" and g["home_nick"] == "Packers"
+    assert g["away_abbr"] == "ATL" and g["home_abbr"] == "GB"
+    assert g["status"] == "FINAL", "the label that states the status must win"
+    assert g["away_score"] == 35 and g["home_score"] == 14
+
+
+def test_a_game_rendered_outside_the_normal_template_is_still_found():
+    """On the real 2026 week-3 page the international game (Ravens at Cowboys, Rio de
+    Janeiro) is not rendered like the others, and the anchor pass alone missed it - the
+    page's own slate came back one game short. The slug pass closes that hole, because a
+    game the league lists must never fall silently out of the comparison."""
+    import nfl_direct as D
+
+    # Shape of a tile whose game is referenced but not through a plain <a href>: this is
+    # what the anchor pass alone cannot see.
+    html = ('<div class="international">Rio de Janeiro</div>'
+            '<script type="application/json">'
+            '{"tile":{"gameUrl":"/games/ravens-at-cowboys-2026-reg-3"}}'
+            '</script>')
+    parsed = D.parse_week_html(html)
+    slugs = {g["slug"] for g in parsed["games"]}
+    assert "/games/ravens-at-cowboys-2026-reg-3" in slugs
+    assert parsed["parse"]["games_found_by_slug_scan"] >= 1
+    intl = [g for g in parsed["games"] if "ravens" in g["slug"]][0]
+    # Found is not the same as invented: with no label there is no score and no guess.
+    assert intl["away_score"] is None and intl["home_score"] is None
+    assert intl["away_abbr"] is None
+    assert intl["method"] == "slug-scan"
+
+
+def test_slug_scan_reads_the_teams_from_the_slug_when_no_label_exists():
+    """The slug itself carries away, home, season, type and week - all of it nfl.com's own
+    URL structure - so a game can be compared even when its label is unreadable."""
+    import nfl_direct as D
+
+    parsed = D.parse_week_html('<a href="/games/ravens-at-cowboys-2026-reg-3"></a>')
+    g = parsed["games"][0]
+    assert g["url"] == "https://www.nfl.com/games/ravens-at-cowboys-2026-reg-3"
+    assert g["slug"] == "/games/ravens-at-cowboys-2026-reg-3"
+
+
+def test_direct_reader_reports_an_unreadable_page_instead_of_inventing_games():
+    import nfl_direct as D
+
+    parsed = D.parse_week_html(_WEEK_HTML_UNREADABLE, source_url="u")
+    assert parsed["games"] == []
+    assert parsed["parse"]["game_anchors"] == 1
+    assert parsed["parse"]["games_parsed"] == 0
+    # The junk link is counted as skipped, not turned into a record full of nulls.
+    assert parsed["parse"]["links_skipped_not_game_like"] == 1
+
+
+def test_direct_reader_never_treats_a_missing_http_response_as_agreement():
+    """A week nfl.com does not publish must be `ok: False`, never a silent success."""
+    import nfl_direct as D
+
+    result = D.fetch_week(2005, "REG", 1)  # before nfl.com's own earliest week page
+    assert result["ok"] is False
+    assert result["url"] is None
+    assert "no verified nfl.com week-page pattern" in result["error"]
+    assert result["games"] == []
+    # No request was made, so claiming an HTTP status would be a fabrication.
+    assert result["http_status"] is None
+
+
+def test_status_vocabulary_only_uses_wording_nfl_com_actually_prints():
+    import nfl_direct as D
+
+    assert D.classify_status("FINAL", True) == "FINAL"
+    assert D.classify_status("Final", True) == "FINAL"
+    assert D.classify_status(None, False) == "SCHEDULED"
+    assert D.classify_status(None, True) == "UNKNOWN"
+    assert D.classify_status("9:24", True) == "IN_PROGRESS"
+    assert D.classify_status("Halftime", True) == "IN_PROGRESS"
+    assert D.classify_status("Postponed", False) == "POSTPONED"
+    # Anything we have not seen is reported as UNKNOWN rather than guessed at.
+    assert D.classify_status("something new nfl.com printed", True) == "UNKNOWN"
+
+
+def test_official_week_page_url_pattern_is_verified_and_returns_none_otherwise():
+    assert S.nfl_week_url(2025, "REG", 18) == \
+        "https://www.nfl.com/schedules/2025/by-week/week-18"
+    assert S.nfl_week_url(2026, "PRE", 3) == \
+        "https://www.nfl.com/schedules/2026/by-week/preseason-week-3"
+    # Postseason slugs are discovered from the site, not asserted - so no guess is made.
+    assert S.nfl_week_url(2025, "POST", 19) is None
+    assert S.nfl_week_url(None, "REG", 1) is None
+    # nfl.com's own season selector starts at 2010, so no link is built below that.
+    assert S.nfl_week_url(2009, "REG", 1) is None
+    assert S.nfl_week_url(2010, "REG", 1).endswith("/schedules/2010/by-week/week-1")
+
+
+def test_gamebook_url_is_built_only_from_a_real_nfl_game_uuid():
+    assert S.nfl_gamebook_url("a9a87603-4feb-11f1-abca-2c54536568a9") == (
+        "https://static.www.nfl.com/image/upload/gamecenter/"
+        "a9a87603-4feb-11f1-abca-2c54536568a9.pdf"
+    )
+    # Anything that is not an NFL game UUID produces no link rather than a broken one.
+    assert S.nfl_gamebook_url("2026091308") is None
+    assert S.nfl_gamebook_url("") is None
+    assert S.nfl_gamebook_url(None) is None
+    assert S.nfl_gamebook_url("a9a87603-4feb-11f1-abca") is None
+
+
+def test_schedule_nfl_detail_id_is_never_used_to_build_a_gamebook_url():
+    """Verified on nfl.com 2026-09-25: the schedule feed's `nfl_detail_id` is NOT the key
+    of the league's Game Book PDF, so it must never be turned into one.
+
+    2021_01_DAL_TB: nfl_detail_id 10160000-0585-0395-7f87-0c3334b38e2e, but the Game Book
+    the official page links is c5722300-b37c-11eb-9617-afa9727fab42.pdf.
+    2021_01_JAX_HOU: nfl_detail_id 10160000-0585-0955-6419-0435c7f11d5d, Game Book
+    c59f20b4-b37c-11eb-b268-91616e0aa8ce.pdf.
+    """
+    row = _sched_row()
+    row["nfl_detail_id"] = "10160000-0585-0395-7f87-0c3334b38e2e"
+    g = normalise_game(row, _teams(), "u", NOW)
+    assert g["ids"]["nfl_api_id"] is None, "the schedule id must not be relabelled"
+    assert g["ids"]["nfl_detail_id"] == "10160000-0585-0395-7f87-0c3334b38e2e"
+    assert g["links"]["nfl_gamebook"] is None
+    # No per-game flag is raised for this: it is a property of the feed, not a fault in
+    # one record. It is documented once in the manifest's data caveats.
+    assert not any(i.startswith("nfl-detail-id") for i in g["irregularities"])
+
+
+def test_a_game_without_an_nfl_api_id_is_flagged_rather_than_left_blank():
+    """Before 1.2.0 the pipeline published a blank id and raised no flag, so a reader
+    could not tell 'not published upstream' from 'we failed to read it'."""
+    row = _sched_row()
+    row["nfl_detail_id"] = ""
+    g = normalise_game(row, _teams(), "u", NOW)
+    assert g["links"]["nfl_gamebook"] is None
+    assert g["ids"]["nfl_api_id"] is None and g["ids"]["nfl_detail_id"] is None
+
+
+def test_gamebook_link_is_built_from_the_play_by_play_uuid_and_clears_the_flag():
+    import normalize as N
+
+    game = normalise_game(_sched_row(), _teams(), "u", NOW)
+    plays = [{"play_id": 1, "play_type_nfl": "GAME_START", "qtr": 1,
+              "total_home_score": 0, "total_away_score": 0}]
+    doc = N.build_game_pbp(plays, game, "u", list(N.PBP_REQUIRED_COLUMNS),
+                           {"nfl_api_id": "a9a87603-4feb-11f1-abca-2c54536568a9"})
+    assert doc["links"]["nfl_gamebook"] == (
+        "https://static.www.nfl.com/image/upload/gamecenter/"
+        "a9a87603-4feb-11f1-abca-2c54536568a9.pdf"
+    )
+    assert "pbp-built-without-nfl-api-id" not in doc["irregularities"], (
+        "the flag must clear once the id is known, or the report would keep reporting a "
+        "gap that has been filled"
+    )
+
+
+def test_an_identifier_in_the_wrong_shape_never_becomes_a_url():
+    import normalize as N
+
+    game = normalise_game(_sched_row(), _teams(), "u", NOW)
+    plays = [{"play_id": 1, "play_type_nfl": "GAME_START", "qtr": 1,
+              "total_home_score": 0, "total_away_score": 0}]
+    doc = N.build_game_pbp(plays, game, "u", list(N.PBP_REQUIRED_COLUMNS),
+                           {"nfl_api_id": "not-a-uuid"})
+    assert doc["links"]["nfl_gamebook"] is None
+    assert "nfl-api-id-not-in-game-uuid-shape" in doc["irregularities"]
+    # ...and it is also reported as the actionable gap it now is.
+    assert "pbp-built-without-nfl-api-id" in doc["irregularities"]
+
+
+def test_play_by_play_ids_are_read_before_they_are_stripped_for_size():
+    """The schedule-vs-pbp identifier check could never fire when the id was already
+    removed from every play; pbp_ids is what makes that check real."""
+    from build_site_data import Loader  # noqa: F401  (import proves the module loads)
+
+    import normalize as N
+
+    game = normalise_game(_sched_row(), _teams(), "u", NOW)
+    game["ids"]["nfl_api_id"] = None
+    plays = [{"play_id": 1, "play_type_nfl": "GAME_START", "qtr": 1,
+              "total_home_score": 0, "total_away_score": 0}]
+    doc = N.build_game_pbp(plays, game, "u", list(N.PBP_REQUIRED_COLUMNS),
+                           {"nfl_api_id": "a9a87603-4feb-11f1-abca-2c54536568a9"})
+    # The id travels from the play rows onto the game record, so the Game Book link can
+    # be rebuilt even when the schedule feed omitted it.
+    assert doc["ids"]["nfl_api_id"] == "a9a87603-4feb-11f1-abca-2c54536568a9"
+    assert doc["links"]["nfl_gamebook"]
+
+
+def test_the_two_feeds_carry_different_identifier_families_and_we_say_so():
+    """A check that cannot fire is worse than no check: the report's legend used to
+    promise a schedule-vs-pbp UUID comparison that could never run, because the id had
+    already been stripped from every play. What is real is the divergence between the
+    schedule's nfl_detail_id and the play-by-play's nfl_api_id - so that is what is
+    recorded, as information rather than as an error."""
+    import normalize as N
+
+    row = _sched_row()
+    row["nfl_detail_id"] = "10160000-0585-0395-7f87-0c3334b38e2e"
+    game = normalise_game(row, _teams(), "u", NOW)
+    plays = [{"play_id": 1, "play_type_nfl": "GAME_START", "qtr": 1,
+              "total_home_score": 0, "total_away_score": 0}]
+    doc = N.build_game_pbp(plays, game, "u", list(N.PBP_REQUIRED_COLUMNS),
+                           {"nfl_api_id": "c5722300-b37c-11eb-9617-afa9727fab42"})
+    assert "nfl-detail-id-differs-from-pbp-game-uuid" in doc["irregularities"]
+
+
+def test_franchise_aliases_join_a_moved_club_without_rewriting_it():
+    assert S.franchise_key("STL") == "LA"
+    assert S.franchise_key("OAK") == "LV"
+    assert S.franchise_key("SD") == "LAC"
+    assert S.franchise_key("KC") == "KC"
+    assert S.franchise_key(None) is None
+
+
+def test_crosscheck_matches_by_url_and_reports_real_disagreements():
+    import nfl_direct as D
+
+    official = {
+        "ok": True, "season": 2025, "season_type": "REG", "week": 18,
+        "fetched_at": "t", "http_status": 200, "url": "u", "parse": {},
+        "games": [
+            {"url": "https://www.nfl.com/games/dolphins-at-patriots-2025-reg-18",
+             "away_abbr": "MIA", "home_abbr": "NE", "away_score": 10, "home_score": 38,
+             "status": "FINAL", "status_text": "FINAL"},
+            {"url": "https://www.nfl.com/games/ravens-at-steelers-2025-reg-18",
+             "away_abbr": "BAL", "home_abbr": "PIT", "away_score": 24, "home_score": 26,
+             "status": "FINAL", "status_text": "FINAL"},
+            {"url": "https://www.nfl.com/games/bills-at-jets-2026-reg-3",
+             "away_abbr": "BUF", "home_abbr": "NYJ", "away_score": None, "home_score": None,
+             "status": "SCHEDULED", "status_text": None},
+        ],
+    }
+    ours = [
+        {"game_id": "g1", "status": "FINAL", "status_estimated": False,
+         "links": {"nfl_game": "https://www.nfl.com/games/dolphins-at-patriots-2025-reg-18"},
+         "away": {"abbr": "MIA", "score": 10}, "home": {"abbr": "NE", "score": 38}},
+        {"game_id": "g2", "status": "IN_PROGRESS", "status_estimated": True,
+         "links": {"nfl_game": "https://www.nfl.com/games/ravens-at-steelers-2025-reg-18"},
+         "away": {"abbr": "BAL", "score": 17}, "home": {"abbr": "PIT", "score": 26}},
+    ]
+    check = D.crosscheck_week(official, ours)
+    assert check["matched"] == 1
+    assert check["mismatched"] == 1
+    assert check["comparable"] == 2
+    kinds = sorted(r["kind"] for r in check["rows"])
+    # official-only: nfl.com lists BUF@NYJ, which this build does not have. Saying so is
+    # the point - a game we are missing must not read as agreement.
+    assert kinds == ["official-only", "score-mismatch", "status-official-final"]
+    assert check["official_only"] == 1
+    # The league's explicit FINAL overrides our clock estimate, and says so.
+    assert ours[1]["status"] == "FINAL"
+    assert ours[1]["status_estimated"] is False
+    assert "status-taken-from-nfl-com" in ours[1]["irregularities"]
+
+
+def test_crosscheck_does_not_claim_success_when_the_read_failed():
+    import nfl_direct as D
+
+    check = D.crosscheck_week({"ok": False, "games": [], "error": "HTTP 503"}, [
+        {"game_id": "g", "away": {"abbr": "A", "score": 1}, "home": {"abbr": "B", "score": 2}},
+    ])
+    assert check["ok"] is False
+    assert check["matched"] == 0 and check["comparable"] == 0
+    assert check["error"] == "HTTP 503"
+
+
+# --------------------------------------------------------------------------- #
+# Data caveats: the corrections the project has made about its own feeds
+# --------------------------------------------------------------------------- #
+
+def test_data_caveat_records_the_identifier_correction_with_evidence():
+    from build_site_data import build_data_caveats
+
+    by_season = {
+        2026: [{
+            "ids": {"nfl_api_id": "a9a87603-4feb-11f1-abca-2c54536568a9",
+                    "nfl_detail_id": None},
+            "links": {"nfl_gamebook":
+                      "https://static.www.nfl.com/image/upload/gamecenter/"
+                      "a9a87603-4feb-11f1-abca-2c54536568a9.pdf"},
+        }],
+        2021: [{
+            "ids": {"nfl_api_id": None,
+                    "nfl_detail_id": "10160000-0585-0395-7f87-0c3334b38e2e"},
+            "links": {},
+        }],
+    }
+    cavs = build_data_caveats(by_season)
+    assert len(cavs) == 1
+    c = cavs[0]
+    assert c["id"] == "nfl-detail-id-is-not-the-game-uuid"
+    # The claim, the two disproofs and the positive proof must all be present, or a
+    # reader cannot check any of it.
+    assert "not the nfl api game uuid" in c["title"].lower()
+    assert "10160000-0585-0395-7f87-0c3334b38e2e" in c["detail"]
+    assert "c5722300-b37c-11eb-9617-afa9727fab42" in c["detail"]
+    assert "c59f20b4-b37c-11eb-b268-91616e0aa8ce" in c["detail"]
+    assert "a9a87603-4feb-11f1-abca-2c54536568a9" in c["detail"]
+    assert len(c["evidence"]) == 3 and all(u.startswith("https://www.nfl.com/")
+                                          for u in c["evidence"])
+    # The measured counts must describe the data handed in, not a remembered number.
+    assert c["measured"] == {
+        "games_in_archive": 2,
+        "games_carrying_a_detail_id": 1,
+        "games_with_a_trusted_nfl_api_uuid": 1,
+        "games_with_an_official_gamebook_link": 1,
+    }
+
+
+def test_data_caveats_are_in_the_manifest_and_the_report():
+    from build_site_data import render_report
+
+    ctx = {
+        "now": dt.datetime(2026, 9, 25, 12, 0, tzinfo=UTC),
+        "downloads": [], "failures": [], "sources": [],
+        "coverage": {"season_count": 1, "season_min": 2026, "season_max": 2026,
+                     "game_count": 1, "pbp_seasons": 0, "pbp_games": 0, "plays": 0,
+                     "current_season": 2026, "current_type": "REG", "current_week": 1},
+        "official_api": {"configured": False, "reason": "no credentials",
+                         "token_endpoint": "t", "docs": "d", "probes": []},
+        "official_direct": {"attempted": False, "skipped_reason": "test"},
+        "data_caveats": [{
+            "id": "x", "title": "A correction", "detail": "the detail",
+            "evidence": ["https://www.nfl.com/games/a-at-b-2026-reg-1"],
+            "measured": {"games_in_archive": 7},
+            "effect_on_site": "none",
+        }],
+        "crosschecks": [],
+        "irregularities": {"total": 0, "by_kind": {}, "items": []},
+    }
+    text = render_report(ctx)
+    assert "6. Data caveats" in text
+    assert "A correction" in text and "the detail" in text
+    assert "https://www.nfl.com/games/a-at-b-2026-reg-1" in text
+
+
+def test_link_audit_is_bounded_and_a_partial_audit_says_so(tmp_path):
+    """The audit is sampled by design, so it must be bounded by design too.
+
+    A link check that can outrun its job takes the feed down with it - the opposite of the
+    project's purpose. And a run that stopped early must never be published as a clean one.
+    """
+    import verify_links as V
+
+    src = _read("pipeline", "verify_links.py")
+    assert "--budget-seconds" in src, "no wall-clock budget on the audit"
+    assert "not_checked_for_budget" in src and '"complete": not not_checked' in src, \
+        "a budget-stopped audit is not recorded as partial"
+    assert 'time.time() - started) > args.budget_seconds' in src, \
+        "the budget is declared but never enforced"
+
+    # And the UI must surface it rather than showing an unqualified clean result.
+    js = _read(JS, "sources.js")
+    assert "not_checked_for_budget" in js and "This audit is incomplete" in js, \
+        "the Sources page would present a partial audit as a complete one"
+
+
+def test_rendered_text_is_used_when_the_accessible_name_omits_the_status():
+    """nfl.com does not always put the status in the accessible name.
+
+    Observed in the 2026 week-3 read: the Thursday tile's aria-label strips to
+    "Falcons 35, Packers 14, Thursday, September 24th" - a real final score with no status
+    word - while the rendered text on the page says "..., FINAL, ...". Reading only the
+    accessible name left that game with a matched score and a status of "we could not
+    tell", which is a worse answer than reading the page.
+    """
+    import nfl_direct as D
+
+    html = ('<a href="/games/falcons-at-packers-2026-reg-3" '
+            'aria-label="Watch Replay, Falcons 35, Packers 14, Thursday, September 24th">'
+            '</a><div>Falcons 35, Packers 14, FINAL, Thursday, September 24th</div>')
+    parsed = D.parse_week_html(html)
+    g = parsed["games"][0]
+    assert g["away_nick"] == "Falcons" and g["home_nick"] == "Packers"
+    assert (g["away_score"], g["home_score"]) == (35, 14)
+    assert g["status"] == "FINAL"
+    assert g["status_text"] == "FINAL"
+
+
+def test_prose_near_a_link_cannot_be_mistaken_for_a_game():
+    """Text scraped from inside a longer sentence must name two real clubs, or it is not
+    believed. Otherwise a stray pair of numbers in a paragraph could be read as a score."""
+    import nfl_direct as D
+
+    html = ('<a href="/games/ravens-at-cowboys-2026-reg-3"></a>'
+            '<p>Rio de Janeiro 3, London 4, FINAL, Sunday, September 27th</p>')
+    parsed = D.parse_week_html(html)
+    g = parsed["games"][0]
+    assert g["away_nick"] is None, "a non-club pair of names must not become a team"
+    assert g["away_score"] is None and g["home_score"] is None
+    assert g["status"] != "FINAL", "no status may be attached from unmatched prose"
+
+
+def test_a_week_read_contains_only_that_week():
+    """A real nfl.com week page links to games outside the week - next week's slate,
+    previous matchups, related links.
+
+    Observed in the live data committed at 2026-09-25T18:38Z: the 2026 week-2 page
+    contributed 16 week-3 games to week 2's slate, and the comparison reported them as
+    "16 games nfl.com lists that this build has no record of" - a false alarm on every
+    single run, and one that would have grown every week. Excluded now, and counted so the
+    exclusion is visible rather than silent.
+    """
+    import nfl_direct as D
+
+    html = ('<a href="/games/lions-at-bills-2026-reg-2" '
+            'aria-label="Lions 31, Bills 41, FINAL, Sunday, September 13th"></a>'
+            '<a href="/games/chargers-at-bills-2026-reg-3" '
+            'aria-label="Chargers at Bills, Sunday, September 27th, 1:00 PM"></a>')
+    parsed = D.parse_week_html(html, week_filter=(2026, "REG", 2))
+    assert [g["slug"] for g in parsed["games"]] == ["/games/lions-at-bills-2026-reg-2"]
+    assert parsed["parse"]["links_to_other_weeks"] == 1
+
+    # Without a filter the caller gets everything, which is what the tests above use.
+    assert len(D.parse_week_html(html)["games"]) == 2
+
+
+def test_week_of_reads_the_week_out_of_an_official_slug():
+    import nfl_direct as D
+
+    assert D._week_of("/games/lions-at-bills-2026-reg-2") == (2026, "REG", 2)
+    assert D._week_of("https://www.nfl.com/games/ravens-at-cowboys-2026-reg-3") == \
+        (2026, "REG", 3)
+    assert D._week_of("/games/49ers-at-cowboys-2026-post-21") == (2026, "POST", 21)
+    assert D._week_of("/games/unknown-game") is None
+    assert D._week_of(None) is None
+
+
+def test_the_refresh_can_publish_even_if_a_human_pushed_mid_run():
+    """A rejected push must not be the end of the run.
+
+    Observed twice on 2026-09-25: the refresh built the data, verified every link and
+    passed the test suite, then failed at the last step because a human push had moved the
+    branch. The feed stopping because someone edited a README is the wrong reason for the
+    feed to stop.
+    """
+    yaml = pytest.importorskip("yaml")
+    path = os.path.join(REPO_ROOT, ".github", "workflows", "refresh-data.yml")
+    doc = yaml.safe_load(open(path, encoding="utf-8"))
+    body = "\n".join(
+        step.get("run", "") for step in doc["jobs"]["refresh"]["steps"]
+    )
+    assert "git rebase" in body and "for attempt in 1 2 3" in body, \
+        "publishing is not resilient to the branch moving mid-run"
+    assert "git push origin" in body
+    # And it must still fail loudly if it genuinely cannot publish.
+    assert "could not publish after 3 attempts" in body
