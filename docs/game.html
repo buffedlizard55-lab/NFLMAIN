@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Game detail &mdash; NFL Scoreboard</title>
+<meta name="color-scheme" content="dark">
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to game detail</a>
+
+<header class="site-head">
+  <div class="site-head__inner">
+    <div class="brand">
+      <span class="brand__mark" aria-hidden="true">NFL</span>
+      <span>
+        <span class="brand__name">NFL Scoreboard</span><br>
+        <span class="brand__sub">official-data, auto-refreshing</span>
+      </span>
+    </div>
+    <nav class="nav" aria-label="Primary">
+      <a href="index.html">Scoreboard</a>
+      <a href="history.html">Archive</a>
+      <a href="sources.html">Sources &amp; verification</a>
+      <a href="https://github.com/buffedlizard55-lab/NFLMAIN" rel="noopener noreferrer external">Code</a>
+    </nav>
+  </div>
+  <div class="statusbar" id="statusbar" role="status" aria-live="polite">
+    <span class="pill"><span class="dot"></span> Loading game&hellip;</span>
+  </div>
+</header>
+
+<main class="wrap" id="main">
+  <p style="margin:14px 0 0"><a href="index.html">&larr; Back to scoreboard</a></p>
+  <div id="notices"></div>
+  <div id="game"><div class="spinner" role="progressbar" aria-label="Loading game"></div></div>
+
+  <footer class="site-foot">
+    <p><strong>No invented numbers.</strong> Every field on this page comes from NFL-sourced
+      play-by-play. Fields the upstream feed does not publish are shown as
+      <span class="mono">&mdash;</span>, never as a zero or an estimate.</p>
+    <p id="footMeta"></p>
+  </footer>
+</main>
+
+<script src="assets/js/common.js"></script>
+<script src="assets/js/game.js"></script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+# The pipeline has NO runtime dependencies - it uses only the Python standard library
+# (urllib, csv, gzip, json, zoneinfo, hashlib, argparse).
+#
+# That is deliberate. A scheduled workflow that has to install five packages has five more
+# ways to fail, and this workflow is what keeps the feed current without human attention.
+# Fewer moving parts = higher probability the feed stays green.
+#
+# Requirements:
+#   Python >= 3.9  (for zoneinfo; 3.11 used in CI)
+#   tzdata         (present on GitHub's ubuntu-latest runners; the pipeline degrades to
+#                   kickoff_time_known=false rather than guessing a UTC offset if absent)
+#
+# Development / test only:
+#   pytest

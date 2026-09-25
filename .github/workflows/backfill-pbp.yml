@@ -1,0 +1,81 @@
+name: Backfill play-by-play
+
+# Historical play-by-play is generated on demand rather than committed for all 28 seasons
+# at once: a full archive would be hundreds of megabytes of JSON in git, which makes the
+# published site slow and the repository unwieldy. Scores, dates, venues, officials and
+# NFL identifiers already exist for every game in every season; this workflow adds the
+# per-play detail for the seasons you actually want.
+
+on:
+  workflow_dispatch:
+    inputs:
+      seasons:
+        description: 'Comma-separated seasons to build, e.g. 2024,2023,2001 (leave blank for all)'
+        required: false
+        default: ''
+      all_seasons:
+        description: 'Build every season from 1999 to the present (slow, large commit)'
+        required: false
+        default: 'false'
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: backfill-pbp
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    name: Build historical play-by-play
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      NFLMAIN_CACHE_DIR: ${{ github.workspace }}/.cache/upstream
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Ensure the base snapshot exists
+        run: |
+          if [ ! -f docs/data/manifest.json ]; then
+            echo "::notice::No snapshot yet - building the base data first."
+            python3 pipeline/build_site_data.py --no-report
+          fi
+
+      - name: Build play-by-play
+        run: |
+          if [ "${{ inputs.all_seasons }}" = "true" ]; then
+            python3 pipeline/build_site_data.py --all-pbp
+          elif [ -n "${{ inputs.seasons }}" ]; then
+            python3 pipeline/build_site_data.py --pbp-seasons "${{ inputs.seasons }}"
+          else
+            echo "::error::Provide either a season list or enable all_seasons."
+            exit 1
+          fi
+
+      - name: Report the resulting repository size
+        run: |
+          echo "docs/data size: $(du -sh docs/data | cut -f1)"
+          echo "pbp files: $(find docs/data/pbp -type f 2>/dev/null | wc -l)"
+
+      - name: Commit
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A docs/data reports
+          if git diff --cached --quiet; then
+            echo "Nothing to commit - those seasons were already built."
+            exit 0
+          fi
+          git commit \
+            -m "feat(data): backfill play-by-play (${{ inputs.seasons }}${{ inputs.all_seasons }}) [skip ci]" \
+            -m "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          git push origin HEAD:${{ github.ref_name }}

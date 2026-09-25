@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NFL Scoreboard &mdash; live and historical, sourced from NFL data</title>
+<meta name="description" content="An NFL scoreboard covering every game from 1999 to the present week, with play-by-play, built only from NFL-sourced data and linked back to NFL.com for manual review.">
+<meta name="color-scheme" content="dark">
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to scoreboard</a>
+
+<header class="site-head">
+  <div class="site-head__inner">
+    <div class="brand">
+      <span class="brand__mark" aria-hidden="true">NFL</span>
+      <span>
+        <span class="brand__name">NFL Scoreboard</span><br>
+        <span class="brand__sub">official-data, auto-refreshing</span>
+      </span>
+    </div>
+    <nav class="nav" aria-label="Primary">
+      <a href="index.html" aria-current="page">Scoreboard</a>
+      <a href="history.html">Archive</a>
+      <a href="sources.html">Sources &amp; verification</a>
+      <a href="https://github.com/buffedlizard55-lab/NFLMAIN" rel="noopener noreferrer external">Code</a>
+    </nav>
+  </div>
+  <div class="statusbar" id="statusbar" role="status" aria-live="polite">
+    <span class="pill"><span class="dot"></span> Loading feed&hellip;</span>
+  </div>
+</header>
+
+<main class="wrap" id="main">
+  <h1 class="page-title" id="pageTitle">Scoreboard</h1>
+  <p class="page-sub" id="pageSub">Loading the current week&hellip;</p>
+
+  <div id="notices"></div>
+
+  <section class="controls" aria-label="Filters">
+    <div class="field">
+      <label for="seasonSel">Season</label>
+      <select id="seasonSel"></select>
+    </div>
+    <div class="field">
+      <label id="typeLbl">Season type</label>
+      <div class="seg" id="typeSeg" role="group" aria-labelledby="typeLbl"></div>
+    </div>
+    <div class="field">
+      <label for="teamSel">Team</label>
+      <select id="teamSel"></select>
+    </div>
+    <div class="field">
+      <label for="q">Search</label>
+      <input id="q" type="search" placeholder="Team, stadium, game id&hellip;" autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="statusSel">Status</label>
+      <select id="statusSel">
+        <option value="">All statuses</option>
+        <option value="IN_PROGRESS">Live only</option>
+        <option value="FINAL">Final only</option>
+        <option value="SCHEDULED">Scheduled only</option>
+        <option value="FLAGGED">Flagged only</option>
+      </select>
+    </div>
+    <label class="pill" style="cursor:pointer;align-self:flex-end">
+      <input type="checkbox" id="autoRefresh" checked style="min-width:0">
+      Auto-refresh 60s
+    </label>
+    <button class="btn" id="refreshBtn" type="button" style="align-self:flex-end">Refresh now</button>
+  </section>
+
+  <div class="weeknav" id="weeknav" role="group" aria-label="Week"></div>
+
+  <div id="results" aria-live="polite">
+    <div class="spinner" role="progressbar" aria-label="Loading"></div>
+  </div>
+
+  <footer class="site-foot">
+    <p><strong>Where these numbers come from.</strong> Every score, statistic and play on this site is
+      produced by an automated pipeline from NFL-sourced feeds &mdash; never typed in by hand and never
+      estimated. Anything the upstream data does not contain is shown as <span class="mono">&mdash;</span>.</p>
+    <p>Each game links to its official NFL.com Game Center page so you can verify it yourself.
+      See <a href="sources.html">Sources &amp; verification</a> for the full provenance chain, the HTTP
+      evidence behind every claim, and any irregularities currently flagged for review.</p>
+    <p id="footMeta"></p>
+  </footer>
+</main>
+
+<script src="assets/js/common.js"></script>
+<script src="assets/js/scoreboard.js"></script>
+</body>
+</html>

@@ -1,0 +1,96 @@
+name: Tests
+
+on:
+  push:
+    branches: ['**']
+    paths:
+      - 'pipeline/**'
+      - 'tests/**'
+      - 'docs/assets/**'
+      - '.github/workflows/tests.yml'
+  pull_request:
+    paths:
+      - 'pipeline/**'
+      - 'tests/**'
+      - 'docs/assets/**'
+      - '.github/workflows/tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Pipeline tests + offline build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install test dependencies
+        run: python3 -m pip install --quiet pytest PyYAML
+
+      - name: Run unit tests
+        run: python3 -m pytest tests -q
+
+      - name: Prove the pipeline builds end-to-end from fixtures (no network)
+        run: |
+          rm -rf /tmp/offline-build
+          python3 pipeline/build_site_data.py \
+            --offline tests/fixtures \
+            --out /tmp/offline-build \
+            --report /tmp/offline-build/report.md
+          test -f /tmp/offline-build/manifest.json
+          test -f /tmp/offline-build/scoreboard.json
+          test -f /tmp/offline-build/teams.json
+          echo "Offline build produced:"
+          find /tmp/offline-build -type f | sort
+
+      - name: Prove the live build works against the real feeds
+        # This is the check that matters: it exercises the actual network path against
+        # nflverse/nfl.com data, not fixtures. It writes to /tmp so it cannot pollute the
+        # repository, and it asserts that real games and real plays came back.
+        run: |
+          rm -rf /tmp/live-build
+          python3 pipeline/build_site_data.py --out /tmp/live-build --report /tmp/live-build/report.md
+          python3 - <<'PY'
+          import json, sys
+          m = json.load(open('/tmp/live-build/manifest.json'))
+          cov = m['coverage']
+          print(json.dumps(cov, indent=2))
+          problems = []
+          if cov['season_count'] < 20:
+              problems.append(f"only {cov['season_count']} seasons - expected >= 20")
+          if cov['game_count'] < 5000:
+              problems.append(f"only {cov['game_count']} games - expected >= 5000")
+          if cov['plays'] < 1000:
+              problems.append(f"only {cov['plays']} plays - expected >= 1000")
+          for d in m['downloads']:
+              if d.get('mode') == 'fixture':
+                  problems.append(f"live build used a fixture: {d.get('url')}")
+          if problems:
+              print("::error::Live build assertions failed:")
+              for p in problems:
+                  print("  - " + p)
+              sys.exit(1)
+          print("LIVE BUILD OK")
+          PY
+
+      - name: JavaScript syntax check
+        run: |
+          for f in docs/assets/js/*.js; do
+            node --check "$f" && echo "ok: $f"
+          done
+
+      - name: Upload offline build for inspection
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: offline-build
+          path: /tmp/offline-build
+          if-no-files-found: warn
+          retention-days: 7
