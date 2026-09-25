@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sources &amp; verification &mdash; NFL Scoreboard</title>
+<meta name="description" content="The provenance chain, HTTP verification evidence, official NFL links, flagged irregularities and known limitations behind this scoreboard.">
+<meta name="color-scheme" content="dark">
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to sources</a>
+
+<header class="site-head">
+  <div class="site-head__inner">
+    <div class="brand">
+      <span class="brand__mark" aria-hidden="true">NFL</span>
+      <span>
+        <span class="brand__name">NFL Scoreboard</span><br>
+        <span class="brand__sub">official-data, auto-refreshing</span>
+      </span>
+    </div>
+    <nav class="nav" aria-label="Primary">
+      <a href="index.html">Scoreboard</a>
+      <a href="history.html">Archive</a>
+      <a href="sources.html" aria-current="page">Sources &amp; verification</a>
+      <a href="https://github.com/buffedlizard55-lab/NFLMAIN" rel="noopener noreferrer external">Code</a>
+    </nav>
+  </div>
+  <div class="statusbar" id="statusbar" role="status" aria-live="polite">
+    <span class="pill"><span class="dot"></span> Loading manifest&hellip;</span>
+  </div>
+</header>
+
+<main class="wrap" id="main">
+  <h1 class="page-title">Sources &amp; verification</h1>
+  <p class="page-sub">Everything below is read from the build manifest, so it describes the
+    snapshot you are actually looking at &mdash; not a hand-written claim.</p>
+
+  <div id="notices"></div>
+
+  <section class="panel">
+    <h3>The rule this project runs on</h3>
+    <p style="margin-top:0">Every score, statistic and play here is produced by an automated
+      pipeline from an NFL-sourced feed. <strong>Nothing is typed in by hand and nothing is
+      estimated unless the field name says so.</strong> When the upstream data does not
+      contain a value, the site shows <span class="mono">&mdash;</span> rather than a zero
+      or a plausible guess, because &ldquo;0 points&rdquo; and &ldquo;unknown&rdquo; are
+      different facts. Anything the pipeline thinks looks wrong is written into the
+      <a href="#irregularities">irregularities</a> table instead of being quietly repaired.</p>
+  </section>
+
+  <h2 class="section-title" id="chain">Provenance chain</h2>
+  <section class="panel">
+    <ol style="margin:0;padding-left:20px;line-height:1.9">
+      <li>NFL clubs and on-field officials record the game.</li>
+      <li><strong>NFL GSIS</strong> &mdash; the league's Game Statistics &amp; Information System,
+        its official stat-keeping system. Stat identifier definitions are published by the NFL at
+        <a href="http://www.nflgsis.com/gsis/Documentation/Partners/StatIDs.html" rel="noopener noreferrer external">nflgsis.com</a>.</li>
+      <li><strong>api.nfl.com</strong> &mdash; the NFL's own API, the service that powers nfl.com.
+        It answers <span class="mono">HTTP 401</span> without an OAuth token the league issues to
+        nfl.com and to contracted partners.</li>
+      <li><strong>nfl.com</strong> &mdash; the official public site: game center pages,
+        play-by-play, box scores and the downloadable Game Book PDF.</li>
+      <li><strong>nflverse</strong> &mdash; a mirror that scrapes nfl.com. The R package
+        <span class="mono">{nflfastR}</span> is documented on
+        <a href="https://cran.r-project.org/web/packages/nflfastR/refman/nflfastR.html" rel="noopener noreferrer external">CRAN</a>
+        as &ldquo;Functions to access National Football League play-by-play data from
+        https://www.nfl.com/&rdquo;. Crucially it preserves the NFL identifiers
+        <span class="mono">old_game_id</span> (GSIS 10-digit) and
+        <span class="mono">nfl_api_id</span> (NFL API game UUID).</li>
+      <li><strong>This repository</strong> &mdash; <span class="mono">pipeline/</span> normalises
+        those feeds into <span class="mono">docs/data/</span>, which this site reads.</li>
+    </ol>
+    <p class="card__meta" style="margin-bottom:0"><strong>Why the mirror is in the chain at all:</strong>
+      the NFL does not operate a free public developer API. The mirror is the only freely
+      redistributable copy whose declared upstream is nfl.com itself, and it carries the real NFL
+      identifiers. The identifier linkage was proven independently &mdash; see
+      <a href="#id-proof">identifier proof</a>.</p>
+  </section>
+
+  <h2 class="section-title" id="id-proof">Identifier proof</h2>
+  <section class="panel">
+    <p style="margin-top:0">A mirror is only trustworthy if its IDs really are the league's IDs.
+      This was checked rather than assumed:</p>
+    <ul style="margin-top:0">
+      <li>The play-by-play feed reports <span class="mono">nfl_api_id =
+        a9a87603-4feb-11f1-abca-2c54536568a9</span> for game
+        <span class="mono">2026_01_ARI_LAC</span> (GSIS id <span class="mono">2026091308</span>).</li>
+      <li>The official page
+        <a href="https://www.nfl.com/games/cardinals-at-chargers-2026-reg-1" rel="noopener noreferrer external">nfl.com/games/cardinals-at-chargers-2026-reg-1</a>
+        &mdash; a URL this project constructs from a verified pattern &mdash; resolves to
+        &ldquo;Arizona Cardinals at Los Angeles Chargers 2026 REG 1 - Game Center&rdquo;.</li>
+      <li>That page's <em>Download Game Book (PDF)</em> link is
+        <span class="mono">static.www.nfl.com/image/upload/&hellip;/gamecenter/<strong>a9a87603-4feb-11f1-abca-2c54536568a9</strong>.pdf</span>.</li>
+    </ul>
+    <p style="margin-bottom:0">The league's own Game Book is keyed by exactly the UUID the mirror
+      reports, so the linkage is genuine and every record here can be traced to an official NFL
+      document.</p>
+  </section>
+
+  <h2 class="section-title" id="sources">Declared sources</h2>
+  <div id="sourcesHost"><div class="spinner" role="progressbar" aria-label="Loading"></div></div>
+
+  <h2 class="section-title" id="official-api">Official NFL API status</h2>
+  <div id="apiHost"></div>
+
+  <h2 class="section-title" id="links">Link verification</h2>
+  <div id="linksHost"></div>
+
+  <h2 class="section-title" id="coverage">Coverage</h2>
+  <div id="coverageHost"></div>
+
+  <h2 class="section-title" id="irregularities">Irregularities flagged for review</h2>
+  <div id="irrHost"></div>
+
+  <h2 class="section-title" id="method">Method notes</h2>
+  <section class="panel">
+    <details class="detail" open>
+      <summary>How game status is decided</summary>
+      <div>
+        <ol style="margin:0;padding-left:18px">
+          <li>If the play-by-play contains an official <span class="mono">GAME_END</span> play,
+            status is <strong>Final</strong> and is marked as not estimated. This is authoritative.</li>
+          <li>Otherwise, if upstream publishes both scores, status is derived from the kickoff
+            clock: within 4h45m of kickoff it reads <strong>Live (est.)</strong>, after that
+            <strong>Final</strong>. Anything derived this way carries
+            <span class="mono">status_estimated: true</span> and the UI shows &ldquo;(est.)&rdquo;.</li>
+          <li>If no score is published and kickoff is in the future, status is <strong>Scheduled</strong>.</li>
+          <li>If no score is published and kickoff is more than 4h45m in the past, status is
+            <strong>Unknown</strong> and the record is flagged
+            <span class="mono">past-window-without-score</span>. A cancelled or postponed game and a
+            lagging feed look identical from the data, so the pipeline refuses to choose between them.</li>
+        </ol>
+        <p style="margin-bottom:0">Kickoff times in the upstream feed are US Eastern, converted to UTC
+          using the <span class="mono">America/New_York</span> zone so daylight saving is handled.
+          If the timezone database is unavailable the pipeline records
+          <span class="mono">kickoff_time_known: false</span> rather than guessing an offset.</p>
+      </div>
+    </details>
+    <details class="detail">
+      <summary>How the quarter-by-quarter line is derived</summary>
+      <div>Taken from the running score published on each official play
+        (<span class="mono">total_home_score</span> / <span class="mono">total_away_score</span>).
+        Each quarter's points are the difference from the previous quarter's running total. Quarters
+        with no scored plays upstream are omitted rather than shown as zero. The line is cross-checked
+        against the scheduled final score and any disagreement is flagged.</div>
+    </details>
+    <details class="detail">
+      <summary>How team statistics are aggregated</summary>
+      <div>Every team and player figure on a game page is a sum of the per-play values published
+        upstream. Nothing is modelled, projected or estimated. Fields the feed does not publish for a
+        game (for example time of possession on older seasons) render as
+        <span class="mono">&mdash;</span>.</div>
+    </details>
+    <details class="detail">
+      <summary>Why some links are hidden</summary>
+      <div><span class="mono">pipeline/verify_links.py</span> fetches the nfl.com URLs this project
+        constructs and records the real HTTP outcome. A link that did not resolve is hidden and
+        reported below, because a link to a 404 is worse than no link. Links that were not sampled are
+        still shown: the URL pattern itself was verified against live nfl.com pages.</div>
+    </details>
+  </section>
+
+  <h2 class="section-title" id="limits">Known limitations</h2>
+  <div id="limitsHost"></div>
+
+  <footer class="site-foot">
+    <p>NFL, the NFL shield and club marks are trademarks of the National Football League. This is an
+      independent project; it is not affiliated with, endorsed by, or operated by the NFL. All data is
+      attributed and linked back to the league's own pages so it can be checked.</p>
+    <p id="footMeta"></p>
+  </footer>
+</main>
+
+<script src="assets/js/common.js"></script>
+<script src="assets/js/sources.js"></script>
+</body>
+</html>

@@ -1,0 +1,153 @@
+name: Refresh NFL data
+
+# Keeps docs/data/ current without any human touching it (PROJECT_PROMPT R5:
+# "solve the problem of having to manually check everything ourselves").
+#
+# Schedule is expressed in UTC and covers the real NFL game windows:
+#   Sunday 13:00 ET early games  -> 17:00/18:00 UTC
+#   Sunday 16:25 ET late games   -> 20:25/21:25 UTC
+#   Sunday 20:20 ET night game   -> 00:20/01:20 UTC Monday
+#   Thursday 20:15 ET            -> 00:15/01:15 UTC Friday
+#   Monday 20:15 ET              -> 00:15/01:15 UTC Tuesday
+#   International 09:30 ET games -> 13:30/14:30 UTC
+# A daily reconciliation run picks up post-game stat corrections.
+
+on:
+  schedule:
+    - cron: '*/15 12-23,0-6 * * 0,1'   # Sunday window, rolling into Monday UTC
+    - cron: '*/15 17-23,0-4 * * 4,5'   # Thursday night window
+    - cron: '*/15 17-23,0-4 * * 1,2'   # Monday night window
+    - cron: '30 10 * * *'              # daily reconciliation
+  # Also rebuild when the pipeline itself changes, so a code change is validated against
+  # the real feeds on the branch before it is merged. Data commits carry [skip ci] so this
+  # cannot loop.
+  push:
+    branches: [main, 'arena/**']
+    paths:
+      - 'pipeline/**'
+      - '.github/workflows/refresh-data.yml'
+  workflow_dispatch:
+    inputs:
+      pbp_seasons:
+        description: 'Comma-separated seasons to build play-by-play for (blank = current season only)'
+        required: false
+        default: ''
+      all_pbp:
+        description: 'Build play-by-play for every season (large, slow)'
+        required: false
+        default: 'false'
+        type: boolean
+      crosscheck:
+        description: 'Cross-check scores against api.nfl.com (needs NFL_API_CLIENT_ID/SECRET secrets)'
+        required: false
+        default: 'true'
+        type: boolean
+      full_link_audit:
+        description: 'Verify EVERY constructed nfl.com link instead of a sample'
+        required: false
+        default: 'false'
+        type: boolean
+
+permissions:
+  contents: write
+
+# Never let two refreshes commit on top of each other.
+concurrency:
+  group: refresh-nfl-data
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    name: Fetch, normalise, verify, publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      NFLMAIN_CACHE_DIR: ${{ github.workspace }}/.cache/upstream
+      NFL_API_CLIENT_ID: ${{ secrets.NFL_API_CLIENT_ID }}
+      NFL_API_CLIENT_SECRET: ${{ secrets.NFL_API_CLIENT_SECRET }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          # Full history keeps the diff-based "did anything change" check meaningful.
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Record the upstream state before fetching
+        run: |
+          echo "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          echo "Triggered by: ${{ github.event_name }}"
+          date -u '+UTC now: %Y-%m-%dT%H:%M:%SZ'
+          python3 -c "import sys, zoneinfo; print('tzdata OK:', 'America/New_York' in zoneinfo.available_timezones())"
+
+      - name: Build site data from the NFL feeds
+        run: |
+          ARGS="--crosscheck"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ "${{ inputs.crosscheck }}" != "true" ]; then ARGS=""; fi
+            if [ -n "${{ inputs.pbp_seasons }}" ]; then ARGS="$ARGS --pbp-seasons ${{ inputs.pbp_seasons }}"; fi
+            if [ "${{ inputs.all_pbp }}" = "true" ]; then ARGS="$ARGS --all-pbp"; fi
+          fi
+          echo "build args: $ARGS"
+          python3 pipeline/build_site_data.py $ARGS
+
+      - name: Verify the constructed nfl.com links over HTTP
+        # continue-on-error: a nfl.com outage or a rate limit must not stop the data
+        # refresh. The result is recorded in link-check.json either way and the site
+        # hides any link proven broken.
+        continue-on-error: true
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.full_link_audit }}" = "true" ]; then
+            python3 pipeline/verify_links.py --full
+          else
+            python3 pipeline/verify_links.py --per-season 2 --current-sample 12
+          fi
+
+      - name: Run the pipeline test suite against the real output
+        run: |
+          python3 -m pip install --quiet pytest
+          python3 -m pytest tests -q
+
+      - name: Summarise what changed
+        run: |
+          python3 pipeline/summarise_run.py || true
+          git add -A docs/data reports
+          if git diff --cached --quiet; then
+            echo "CHANGED=false" >> "$GITHUB_ENV"
+            echo "No data changes since the last refresh."
+          else
+            echo "CHANGED=true" >> "$GITHUB_ENV"
+            echo "Changed files:"
+            git diff --cached --name-only | head -50
+            echo "Total changed: $(git diff --cached --name-only | wc -l)"
+          fi
+
+      - name: Commit and publish
+        if: env.CHANGED == 'true'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # [skip ci] so this commit does not re-trigger the test workflow.
+          git commit -m "chore(data): refresh NFL feed $(date -u '+%Y-%m-%dT%H:%M:%SZ') [skip ci]
+
+Generated by the Refresh NFL data workflow.
+Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+See reports/verification.md for the provenance and irregularity audit."
+          git push origin HEAD:${{ github.ref_name }}
+
+      - name: Upload the verification report as an artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-report
+          path: |
+            reports/verification.md
+            docs/data/manifest.json
+            docs/data/link-check.json
+          if-no-files-found: warn
+          retention-days: 30
