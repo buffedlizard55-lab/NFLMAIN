@@ -1,6 +1,6 @@
 # Data verification report
 
-*Generated automatically by `pipeline/build_site_data.py` v1.2.0 at **2026-09-25T18:31:45Z UTC**.*
+*Generated automatically by `pipeline/build_site_data.py` v1.2.0 at **2026-09-25T18:36:39Z UTC**.*
 
 > Do not edit by hand. This file is the audit trail required by `PROJECT_PROMPT.md` rules R3 and R4: every number on the site must trace back to an official source, and every irregularity must be flagged for human review.
 
@@ -146,16 +146,35 @@
 
 ## 4. Direct read of nfl.com (the league's own site)
 
-**Run.** 2 week page(s) read, 32 game(s) seen, 17 comparable (15 listed but not yet played), **17 score(s) matched**, **0 disagreed**, 0 week page(s) unavailable, 0 game(s) listed by nfl.com that this build has no record of, 0 club name(s) nfl.com printed that this project does not recognise. Read at 2026-09-25T18:31:47Z.
+**Run.** 2 week page(s) read, 48 game(s) seen, 17 comparable (15 listed but not yet played), **17 score(s) matched**, **0 disagreed**, 0 week page(s) unavailable, 16 game(s) listed by nfl.com that this build has no record of, 0 club name(s) nfl.com printed that this project does not recognise. Read at 2026-09-25T18:36:40Z.
 
 These requests were made by this build, with no credentials, to the league's own website. They are the direct-from-NFL check: what nfl.com published, byte count and digest included, versus what this project publishes.
 
 | Week | nfl.com URL | HTTP | Bytes | SHA-256 (first 16) | Games on page | Parsed by | Result |
 |---|---|---|---|---|---|---|---|
-| 2 | <https://www.nfl.com/schedules/2026/by-week/week-2> | 200 | 2358153 | `ca0a867390bd4e62` | 16 | aria-label=16 | read |
-| 3 | <https://www.nfl.com/schedules/2026/by-week/week-3> | 200 | 2426653 | `e770f8ba486fa15f` | 16 | aria-label=15, link-without-a-label=1 | read |
+| 2 | <https://www.nfl.com/schedules/2026/by-week/week-2> | 200 | 2374498 | `6f47978cf4aaf8d0` | 32 | aria-label=16, link-without-a-label=16 | read |
+| 3 | <https://www.nfl.com/schedules/2026/by-week/week-3> | 200 | 2443092 | `69be17ab6005379b` | 16 | aria-label=16 | read |
 
-**No difference between nfl.com's own page and this project's published record was found in the weeks read.**
+**16** difference(s) between nfl.com and this project's published record are listed below.
+
+| Week | Kind | Game | ours | nfl.com | Detail |
+|---|---|---|---|---|---|
+| 2 | `official-only` | - | - | None-None | nfl.com lists a game this build does not have ([nfl.com](https://www.nfl.com/games/chargers-at-bills-2026-reg-3)) |
+| 2 | `official-only` | - | - | None-None | nfl.com lists a game this build does not have ([nfl.com](https://www.nfl.com/games/panthers-at-browns-2026-reg-3)) |
+| 2 | `official-only` | - | - | None-None | nfl.com lists a game this build does not have ([nfl.com](https://www.nfl.com/games/jets-at-lions-2026-reg-3)) |
+| 2 | `official-only` | - | - | None-None | nfl.com lists a game this build does not have ([nfl.com](https://www.nfl.com/games/texans-at-colts-2026-reg-3)) |
+| 2 | `official-only` | - | - | None-None | nfl.com lists a game this build does not have ([nfl.com](https://www.nfl.com/games/patriots-at-jaguars-2026-reg-3)) |
+| 2 | `official-only` | - | - | None-None | nfl.com lists a game this build does not have ([nfl.com](https://www.nfl.com/games/chiefs-at-dolphins-2026-reg-3)) |
+| 2 | `official-only` | - | - | None-None | nfl.com lists a game this build does not have ([nfl.com](https://www.nfl.com/games/titans-at-giants-2026-reg-3)) |
+| 2 | `official-only` | - | - | None-None | nfl.com lists a game this build does not have ([nfl.com](https://www.nfl.com/games/bengals-at-steelers-2026-reg-3)) |
+| 2 | `official-only` | - | - | None-None | nfl.com lists a game this build does not have ([nfl.com](https://www.nfl.com/games/seahawks-at-commanders-2026-reg-3)) |
+| 2 | `official-only` | - | - | None-None | nfl.com lists a game this build does not have ([nfl.com](https://www.nfl.com/games/cardinals-at-49ers-2026-reg-3)) |
+| 2 | `official-only` | - | - | None-None | nfl.com lists a game this build does not have ([nfl.com](https://www.nfl.com/games/vikings-at-buccaneers-2026-reg-3)) |
+| 2 | `official-only` | - | - | None-None | nfl.com lists a game this build does not have ([nfl.com](https://www.nfl.com/games/ravens-at-cowboys-2026-reg-3)) |
+| 2 | `official-only` | - | - | None-None | nfl.com lists a game this build does not have ([nfl.com](https://www.nfl.com/games/raiders-at-saints-2026-reg-3)) |
+| 2 | `official-only` | - | - | None-None | nfl.com lists a game this build does not have ([nfl.com](https://www.nfl.com/games/rams-at-broncos-2026-reg-3)) |
+| 2 | `official-only` | - | - | None-None | nfl.com lists a game this build does not have ([nfl.com](https://www.nfl.com/games/eagles-at-bears-2026-reg-3)) |
+| 2 | `official-only` | - | - | None-None | nfl.com lists a game this build does not have ([nfl.com](https://www.nfl.com/games/falcons-at-packers-2026-reg-3)) |
 
 Per-game detail, including every comparison, is written to `docs/data/official/` and rendered on the Sources page.
 
