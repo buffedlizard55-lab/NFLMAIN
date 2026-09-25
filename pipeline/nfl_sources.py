@@ -7,7 +7,9 @@ DESIGN RULE (see PROJECT_PROMPT.md, R1/R2/R3):
 
 All ``VERIFIED_AT`` / ``VERIFICATION`` notes below record what was actually observed
 when the endpoint or asset was probed, so a human can re-check it. Re-verification is
-performed automatically by ``pipeline/verify.py`` (see reports/verification.md).
+performed automatically on every build: ``pipeline/build_site_data.py`` re-checks the
+generated output and writes ``reports/verification.md``, and ``pipeline/verify_links.py``
+re-fetches the constructed nfl.com links over real HTTP.
 
 Provenance chain (important - read before trusting the numbers):
 
@@ -42,7 +44,7 @@ from typing import Optional
 # Versioning
 # --------------------------------------------------------------------------- #
 
-PIPELINE_VERSION = "1.0.0"
+PIPELINE_VERSION = "1.1.0"
 
 # Earliest season for which NFL play-by-play is available through the verified feed.
 # Verified: nflverse-data release tag `pbp` contains play_by_play_1999.* as its earliest

@@ -519,6 +519,110 @@ def test_build_game_pbp_flags_a_missing_schema():
 
 
 # --------------------------------------------------------------------------- #
+# Report + index honesty (fixes added in pipeline 1.1.0)
+# --------------------------------------------------------------------------- #
+
+
+def _offline_build(out, extra=()):
+    return subprocess.run(
+        [sys.executable, os.path.join(REPO_ROOT, "pipeline", "build_site_data.py"),
+         "--offline", os.path.join(REPO_ROOT, "tests", "fixtures"),
+         "--out", str(out), *extra],
+        capture_output=True, text=True, cwd=REPO_ROOT,
+    )
+
+
+def test_report_legend_describes_the_kinds_the_pipeline_emits():
+    """The report must not contain false football statements about tied regular-season
+    games, and its legend must cover the flag kinds normalize.py actually emits.
+    (Ties are a LEGAL NFL result; only the old `final-game-with-tied-score` text
+    claimed otherwise - the kind it named no longer exists.)"""
+    from build_site_data import render_report
+
+    ctx = {
+        "now": dt.datetime(2026, 9, 25, 12, 0, tzinfo=UTC),
+        "downloads": [],
+        "failures": [],
+        "sources": [],
+        "coverage": {
+            "season_count": 2, "season_min": 2025, "season_max": 2026,
+            "game_count": 60, "pbp_seasons": 1, "pbp_games": 1, "plays": 10,
+            "current_season": 2026, "current_type": "REG", "current_week": 1,
+        },
+        "official_api": {
+            "configured": False, "reason": "no credentials",
+            "token_endpoint": "t", "docs": "d", "probes": [],
+        },
+        "crosschecks": [],
+        "irregularities": {
+            "total": 2,
+            "by_kind": {
+                "tied-game": {"count": 1, "example": "2025_04_GB_DAL"},
+                "past-window-without-score": {"count": 1, "example": "2026_03_X_Y"},
+            },
+            "items": [
+                {"kind": "tied-game", "game_id": "2025_04_GB_DAL",
+                 "season": 2025, "season_type": "REG", "week": 4},
+                {"kind": "past-window-without-score", "game_id": "2026_03_X_Y",
+                 "season": 2026, "season_type": "REG", "week": 3},
+            ],
+        },
+    }
+    text = render_report(ctx)
+    assert "impossible in the NFL" not in text, \
+        "tied regular-season games are legal; the report must not claim otherwise"
+    assert "`tied-game`" in text and "LEGAL NFL result" in text
+    assert "`postseason-game-with-tied-score`" in text
+    assert "`missing-kickoff-time`" in text and "`score-without-kickoff-time`" in text
+    assert "`quarter-line-" in text
+    assert "`final-game-with-tied-score`" not in text, "stale kind in the legend"
+
+
+def test_build_season_index_reports_real_pbp_files(tmp_path):
+    from build_site_data import build_season_index
+
+    pbp_dir = tmp_path / "pbp"
+    pbp_dir.mkdir()
+    (pbp_dir / "2026_01_ARI_CHI.json").write_text("{}")
+    now = dt.datetime(2026, 9, 25, 12, 0, tzinfo=UTC)
+    g = {"status": "FINAL", "season_type": "REG", "week": 1}
+    idx = build_season_index(
+        {2026: [dict(g)], 2025: [dict(g)]},
+        {"season": 2026, "season_type": "REG", "week": 1},
+        now,
+        str(pbp_dir),
+    )
+    by_season = {s["season"]: s for s in idx["seasons"]}
+    assert by_season[2026]["has_pbp_file"] is True
+    assert by_season[2026]["pbp_file_count"] == 1
+    assert by_season[2025]["has_pbp_file"] is False, \
+        "the index must not claim play-by-play availability that has no file behind it"
+    assert by_season[2025]["pbp_file_count"] == 0
+
+
+def test_determine_current_survives_games_without_week_numbers():
+    from build_site_data import determine_current
+
+    now = dt.datetime(2026, 9, 25, 12, 0, tzinfo=UTC)
+    games = [
+        {"status": "FINAL", "season_type": "REG", "week": None},
+        {"status": "SCHEDULED", "season_type": "REG", "week": None},
+    ]
+    out = determine_current({2026: games}, now)
+    assert out == {"season": 2026, "season_type": "REG", "week": 1}, \
+        "must fall back to week 1 rather than raising on an empty max()"
+
+
+def test_determine_current_survives_scheduled_only_without_weeks():
+    from build_site_data import determine_current
+
+    now = dt.datetime(2026, 9, 25, 12, 0, tzinfo=UTC)
+    games = [{"status": "SCHEDULED", "season_type": "REG", "week": None}]
+    out = determine_current({2026: games}, now)
+    assert out["week"] == 1
+
+
+# --------------------------------------------------------------------------- #
 # End-to-end offline build
 # --------------------------------------------------------------------------- #
 
@@ -564,10 +668,31 @@ def test_offline_build_produces_a_complete_valid_snapshot(tmp_path):
     assert unmerged["pbp_available"] is False
     assert unmerged["quarter_scores"] is None
 
+    # Audit honesty: `bytes` is the download size and must never be clobbered by the
+    # last written JSON file (a real bug fixed in pipeline 1.1.0); `written_bytes`
+    # accumulates the JSON sizes.
+    pbp_stat = manifest["pbp"][0]
+    fixture_bytes = os.path.getsize(
+        os.path.join(REPO_ROOT, "tests", "fixtures", "play_by_play_2026.csv"))
+    assert pbp_stat["bytes"] == fixture_bytes
+    pbp_files = [n for n in os.listdir(out / "pbp") if n.endswith(".json")]
+    written = sum(os.path.getsize(os.path.join(out / "pbp", n)) for n in pbp_files)
+    assert pbp_stat["written_bytes"] == written
+
+    # The season index must state play-by-play availability from real files, and the
+    # statuses from the post-merge state (the 3c re-write), not from before the build.
+    index = json.loads((out / "seasons" / "index.json").read_text())
+    by_season_idx = {s["season"]: s for s in index["seasons"]}
+    assert by_season_idx[2026]["has_pbp_file"] is True
+    assert by_season_idx[2026]["pbp_file_count"] == len(
+        [n for n in pbp_files if n.startswith("2026_")])
+    assert by_season_idx[2025]["has_pbp_file"] is False
+
     assert report.exists() and "Provenance" not in report.read_text()[:1] or True
     text = report.read_text()
     assert "Irregularities flagged for review" in text
     assert "api.nfl.com" in text
+    assert "impossible in the NFL" not in text
 
 
 def test_build_refuses_to_run_when_a_required_column_disappears(tmp_path, monkeypatch):

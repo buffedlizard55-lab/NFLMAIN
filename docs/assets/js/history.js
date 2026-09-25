@@ -100,6 +100,7 @@
       renderTypeSeg();
       renderWeekSelect();
       renderTeamSelect();
+      renderStandings();
       renderResults();
       syncUrl();
     });
@@ -114,6 +115,139 @@
     if (state.q) p.set("q", state.q);
     var qs = p.toString();
     global.history.replaceState(null, "", global.location.pathname + (qs ? "?" + qs : ""));
+  }
+
+  /* ------------------------------------------------------------ standings */
+
+  /**
+   * Standings derived purely from the games already published for this season.
+   * Hard rules honoured here (PROJECT_PROMPT R2):
+   *   * Only FINAL regular-season games with two published scores are counted.
+   *   * A "final" game missing a score is NOT guessed; it is excluded and the
+   *     exclusion is stated on the page.
+   *   * This is a derived view. The official table is linked, never replaced.
+   */
+  function standingsRows() {
+    var games = ((state.seasonDoc && state.seasonDoc.games) || []);
+    var table = {};
+    var skipped = 0;
+    games.forEach(function (g) {
+      if ((g.season_type || "") !== "REG") return;
+      if (g.status !== "FINAL") return;
+      var a = g.away || {}, h = g.home || {};
+      if (!a.abbr || !h.abbr || a.score === null || a.score === undefined ||
+          h.score === null || h.score === undefined) {
+        skipped += 1;
+        return;
+      }
+      function entry(card) {
+        if (!table[card.abbr]) {
+          table[card.abbr] = {
+            abbr: card.abbr, name: card.name || card.abbr,
+            card: card, gp: 0, w: 0, l: 0, t: 0, pf: 0, pa: 0
+          };
+        }
+        return table[card.abbr];
+      }
+      var aw = entry(a), ho = entry(h);
+      aw.gp++; ho.gp++;
+      aw.pf += a.score; aw.pa += h.score;
+      ho.pf += h.score; ho.pa += a.score;
+      if (a.score === h.score) { aw.t++; ho.t++; }
+      else if (a.score > h.score) { aw.w++; ho.l++; }
+      else { ho.w++; aw.l++; }
+    });
+    var rows = Object.keys(table).map(function (k) {
+      var r = table[k];
+      r.pct = r.gp ? Math.round(((r.w + r.t / 2) / r.gp) * 1000) / 1000 : null;
+      r.diff = r.pf - r.pa;
+      return r;
+    });
+    rows.sort(function (x, y) {
+      return (y.pct - x.pct) || (y.diff - x.diff) || (y.pf - x.pf) ||
+        String(x.name).localeCompare(String(y.name));
+    });
+    return { rows: rows, skipped: skipped };
+  }
+
+  function renderStandings() {
+    var section = $("standingsSection");
+    if (!section) return;
+    var host = $("standings");
+    if (!host) return;
+    N.clear(host);
+    var s = standingsRows();
+    if (!s.rows.length) { section.hidden = true; return; }
+    section.hidden = false;
+
+    var note = $("standingsNote");
+    if (note) {
+      N.clear(note);
+      note.appendChild(document.createTextNode(
+        "Computed only from games this archive marks Final; " + s.rows.length +
+        " team" + (s.rows.length === 1 ? "" : "s") +
+        ", " + s.rows.reduce(function (n, r) { return n + r.gp; }, 0) / 2 +
+        " game" + (s.rows.reduce(function (n, r) { return n + r.gp; }, 0) === 2 ? "" : "s") +
+        " counted. "));
+      if (s.skipped) {
+        note.appendChild(document.createTextNode(
+          s.skipped + " Final game" + (s.skipped === 1 ? "" : "s") +
+          " without published scores " + (s.skipped === 1 ? "was" : "were") +
+          " excluded rather than guessed. "));
+      }
+      note.appendChild(document.createTextNode(
+        "Order: win pct, then point differential, then points for - not the league's " +
+        "tiebreakers. Official table: "));
+      note.appendChild(N.el("a", {
+        href: "https://www.nfl.com/standings/", target: "_blank",
+        rel: "noopener noreferrer", text: "nfl.com/standings"
+      }));
+      note.appendChild(document.createTextNode(" Click a row to filter the results below."));
+    }
+
+    var table = N.el("table", { class: "data standings" });
+    var thead = N.el("tr", {}, [
+      N.el("th", { text: "#" }),
+      N.el("th", { text: "Team" }),
+      N.el("th", { class: "num", text: "GP" }),
+      N.el("th", { class: "num", text: "W" }),
+      N.el("th", { class: "num", text: "L" }),
+      N.el("th", { class: "num", text: "T" }),
+      N.el("th", { class: "num", text: "PCT" }),
+      N.el("th", { class: "num", text: "PF" }),
+      N.el("th", { class: "num", text: "PA" }),
+      N.el("th", { class: "num", text: "DIFF" })
+    ]);
+    table.appendChild(N.el("thead", {}, [thead]));
+    var tbody = N.el("tbody");
+    s.rows.forEach(function (r, i) {
+      var selected = state.team === r.abbr;
+      var tr = N.el("tr", {
+        class: "standings-row" + (selected ? " is-selected" : ""),
+        onclick: function () {
+          state.team = selected ? "" : r.abbr;
+          renderTeamSelect();
+          renderResults();
+          renderStandings();
+          syncUrl();
+        }
+      }, [
+        N.el("td", { class: "rank", text: String(i + 1) }),
+        N.el("td", { class: "team" }, [N.logoEl(r.card, "logo--sm"), " ", r.abbr + " ",
+          N.el("span", { style: "color:var(--text-faint)", text: r.name })]),
+        N.el("td", { class: "num", text: String(r.gp) }),
+        N.el("td", { class: "num", text: String(r.w) }),
+        N.el("td", { class: "num", text: String(r.l) }),
+        N.el("td", { class: "num", text: String(r.t) }),
+        N.el("td", { class: "num", text: r.pct === null ? "\u2014" : r.pct.toFixed(3) }),
+        N.el("td", { class: "num", text: String(r.pf) }),
+        N.el("td", { class: "num", text: String(r.pa) }),
+        N.el("td", { class: "num", text: (r.diff > 0 ? "+" : "") + r.diff })
+      ]);
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    host.appendChild(table);
   }
 
   /* -------------------------------------------------------------- render */

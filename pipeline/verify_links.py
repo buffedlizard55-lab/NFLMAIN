@@ -14,7 +14,10 @@ What it does
 * Writes docs/data/link-check.json:
       { "checked_at", "summary": {...}, "patterns": {...}, "failures": [url,...],
         "results": { url: {"status":200,"ok":true} } }
-* Exits non-zero if any *checked* link failed, so a broken pattern stops the build.
+* Exits non-zero when a link *pattern* is proven broken (>=3 genuine HTTP failures with
+  zero successes for that pattern). Individual proven-broken links are recorded and the
+  site hides them; checks that got no HTTP response at all are inconclusive and never
+  fail the build (a network problem on our side is not evidence about the NFL).
 
 Sampling
 --------

@@ -61,6 +61,16 @@
     <button class="btn" id="archClear" type="button" style="align-self:flex-end">Clear filters</button>
   </section>
 
+  <section id="standingsSection" hidden aria-label="Derived standings">
+    <h2 class="section-title">Standings <span class="muted">(derived from the final scores in this archive)</span></h2>
+    <p class="page-sub" id="standingsNote">
+      Computed only from games this archive marks Final. This is a derived view, not the
+      league's official table &mdash; the official standings are at
+      <a href="https://www.nfl.com/standings/" rel="noopener noreferrer external">nfl.com/standings</a>.
+    </p>
+    <div id="standings"></div>
+  </section>
+
   <div id="results"><div class="spinner" role="progressbar" aria-label="Loading"></div></div>
 
   <footer class="site-foot">

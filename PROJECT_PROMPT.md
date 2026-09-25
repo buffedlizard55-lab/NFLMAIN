@@ -92,7 +92,7 @@ These are non-negotiable and apply to every session on this repo.
 |---|------|---------------------------------|
 | R1 | Data must come from the official governing league (NFL). | `pipeline/nfl_sources.py` is the single source registry. Every dataset carries a `provenance` block naming the URL it came from and the chain back to NFL. |
 | R2 | No hallucinated values. No manual data entry. | Nothing in `docs/data/` is hand-written. It is generated only by `pipeline/`. Unknown values are emitted as `null`, never guessed. UI renders `null` as "—" / "Not available". |
-| R3 | Verify line by line, from trusted sources, with links for manual review. | `pipeline/verify.py` re-checks generated output against required fields and writes `reports/verification.md` with clickable official links. |
+| R3 | Verify line by line, from trusted sources, with links for manual review. | `pipeline/build_site_data.py` re-checks generated output against required fields and writes `reports/verification.md` with clickable official links; `pipeline/verify_links.py` fetches every constructed nfl.com link (sampled per build, `--full` on demand) and records the real HTTP outcome. |
 | R4 | Flag irregularities for review. | Verification failures are written to `reports/verification.md` **and** surfaced in the site UI banner. The pipeline exits non-zero on hard failures. |
 | R5 | An up-to-date current feed without manual checking. | `.github/workflows/refresh-data.yml` runs on a schedule during game windows and commits fresh snapshots; the site auto-reloads them. |
 | R6 | Clean, simple, organised, user-friendly GitHub Pages UI. | `docs/` is a dependency-free static site: scoreboard, game detail, historical archive, sources page. |
@@ -101,6 +101,8 @@ These are non-negotiable and apply to every session on this repo.
 ## Start-of-session checklist
 
 1. Read this file.
-2. Read `README.md` → *Current status* and `ROADMAP.md` → *Open work*.
+2. Read `README.md` → *Status of this build* and `ROADMAP.md` → *Roadmap / Manual triage log*.
 3. Read `reports/verification.md` → check for flagged irregularities.
 4. Check the latest GitHub Actions run for `refresh-data.yml` — a red run means the feed is stale.
+5. Re-verify anything you are about to claim: the feeds, the links and the numbers, from
+   official sources, line by line. Do not trust this repo's prose over live evidence.
