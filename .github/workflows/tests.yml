@@ -98,6 +98,9 @@ jobs:
             --season "$1" --type "$2" --week "$3" --dump-chars 4000
 
       - name: Diff the official nfl.com read against the published build
+        # Every week the pipeline reads is checked here, not just the current one. The bug
+        # this replaces was invisible on the current week and only appeared on the previous
+        # one, where the page's links to the NEXT week were being counted as its own slate.
         run: |
           python3 - <<'PY'
           import json, sys
@@ -106,52 +109,43 @@ jobs:
 
           m = json.load(open('/tmp/live-build/manifest.json'))
           cur = m['current']
-          season = json.load(open(f"/tmp/live-build/seasons/{cur['season']}.json"))
-          ours = [g for g in season['games']
-                  if g.get('week') == cur['week'] and g.get('season_type') == cur['season_type']]
+          weeks = (m.get('official_direct') or {}).get('weeks_requested') or [cur['week']]
+          print("weeks nfl.com is being read for:", weeks)
 
-          official = fetch_week(cur['season'], cur['season_type'], cur['week'])
-          print("nfl.com read:", official['http_status'], official['bytes'], "bytes,",
-                len(official['games']), "games; parse:", official['parse'])
+          season_doc = json.load(open(f"/tmp/live-build/seasons/{cur['season']}.json"))
+          failures = []
 
-          if not official['ok']:
-              print("::error::The direct nfl.com reader returned no games.")
-              print("error:", official['error'])
-              sys.exit(1)
+          for week in weeks:
+              ours = [g for g in season_doc['games']
+                      if g.get('week') == week
+                      and g.get('season_type') == cur['season_type']]
+              official = fetch_week(cur['season'], cur['season_type'], week)
+              if not official['ok']:
+                  failures.append(f"week {week}: the direct nfl.com reader returned no games "
+                                  f"({official['error']})")
+                  continue
+              check = crosscheck_week(official, ours)
+              print(f"--- week {week}: {json.dumps({k: v for k, v in check.items() if k != 'rows'})}")
+              if check['mismatched']:
+                  failures.append(f"week {week}: nfl.com disagrees with "
+                                  f"{check['mismatched']} published score(s)")
+              if check['unrecognised_club_names']:
+                  failures.append(f"week {week}: {check['unrecognised_club_names']} club name(s) "
+                                  f"could not be resolved")
+              if check['official_only']:
+                  failures.append(f"week {week}: nfl.com lists {check['official_only']} game(s) "
+                                  f"this build has no record of")
+              if not official['parse'].get('games_parsed'):
+                  failures.append(f"week {week}: no games parsed")
+              if check['comparable'] < 1 and check['official_no_score'] < 1:
+                  failures.append(f"week {week}: nothing was compared")
 
-          check = crosscheck_week(official, ours)
-          print(json.dumps({k: v for k, v in check.items() if k != 'rows'}, indent=2))
-
-          problems = []
-          # A score disagreement between nfl.com and the published data is a real finding:
-          # fail loudly so a human looks at it rather than shipping it.
-          if check['mismatched']:
-              problems.append(f"nfl.com disagrees with {check['mismatched']} published score(s)")
-          # A club name nfl.com printed that we cannot resolve means the label was read
-          # wrong (this is how "Watch Replay, Falcons" was caught) or a club was renamed.
-          if check['unrecognised_club_names']:
-              problems.append(
-                  f"{check['unrecognised_club_names']} club name(s) nfl.com printed could "
-                  f"not be resolved to an abbreviation")
-          # The reader must have actually looked at something, or it proved nothing.
-          if check['comparable'] < 1 and check['official_no_score'] < 1:
-              problems.append("nothing was compared; the check proved nothing")
-          # Degenerate readings are a parse failure, not a quiet success.
-          if official['parse'].get('games_parsed', 0) < 1:
-              problems.append("the reader parsed no games at all")
-          # If every game came from the weakest strategy, the label parse has regressed.
-          if official['parse'].get('markup_heuristic_used', 0) and \
-                  not official['parse'].get('aria_labels_seen', 0):
-              problems.append("no accessible label was read; only markup guessing was used")
-
-          for row in check['rows']:
-              print("  ", row)
-          if problems:
+          if failures:
               print("::error::Direct nfl.com read failed its checks:")
-              for p in problems:
-                  print("  - " + p)
+              for f in failures:
+                  print("  - " + f)
               sys.exit(1)
-          print("DIRECT NFL READ OK")
+          print("DIRECT NFL READ OK for weeks", weeks)
           PY
 
       - name: JavaScript syntax check

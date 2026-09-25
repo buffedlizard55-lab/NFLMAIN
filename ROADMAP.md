@@ -69,6 +69,22 @@ static files instead of running Jekyll over it.
   dispatches:** `PUT /repos/.../pages` → 403 and `POST /actions/workflows/.../dispatches`
   → 403 ("Resource not accessible by integration"). A human is needed for the Priority-0
   Pages-folder change and for any manual re-trigger outside scheduled windows.
+* **A link audit can outrun its job.** Adding the Game Book PDFs and the week pages to
+  `verify_links.py` pushed a refresh run past its 25-minute timeout: the step was still
+  going after 20 minutes. The audit is sampled by design, so it is now **bounded by
+  design**: `--budget-seconds` (default 420) and anything not reached is recorded as
+  `not_checked_for_budget` with `complete: false`, which the Sources page shows as an
+  incomplete audit. After the fix the same audit took **138.8s for 125 requests, 125 ok**.
+  Never let a check be able to kill the thing it is checking.
+* **A long refresh can lose the race with a human push.** Run 36172463592 (2026-09-25) came
+  out red at the *Commit and publish* step. Its build and link-audit steps had already
+  passed; the audit simply ran so long that a manual push landed on the branch first, so
+  the bot's commit could not fast-forward. If a refresh run is red at that step, check
+  whether the branch moved underneath it before assuming the data is wrong.
+* **Read the artefact, not just the code.** Three of the defects fixed in this session
+  (chrome labels parsed as team names, a whole game missed, another week's slate counted as
+  this week's) were invisible in the source and obvious in `docs/data/official/`. The
+  audit output is there to be read, and reading it is part of the work.
 * **Build sandbox network reality:** `github.com` is reachable; the release-asset host
   `objects.githubusercontent.com` and `nfl.com` are NOT, so live builds and link checks
   only run in CI. Release metadata (publish times, digests) IS checkable from the sandbox
