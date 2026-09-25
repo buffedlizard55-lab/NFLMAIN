@@ -60,8 +60,15 @@
       <li><strong>api.nfl.com</strong> &mdash; the NFL's own API, the service that powers nfl.com.
         It answers <span class="mono">HTTP 401</span> without an OAuth token the league issues to
         nfl.com and to contracted partners.</li>
-      <li><strong>nfl.com</strong> &mdash; the official public site: game center pages,
-        play-by-play, box scores and the downloadable Game Book PDF.</li>
+      <li><strong>nfl.com, read directly</strong> &mdash; the official public site. Two parts
+        of it are read by this pipeline itself, with no credentials and no intermediary:
+        the week page at
+        <span class="mono">/schedules/{season}/by-week/{week}</span>, whose game tiles
+        carry the league's own score and status (published under
+        <span class="mono">docs/data/official/</span> and diffed against everything here),
+        and the league's <strong>Game Book PDF</strong> at
+        <span class="mono">/image/upload/gamecenter/{nfl_api_id}.pdf</span>, linked on every
+        game page whose NFL game UUID is known.</li>
       <li><strong>nflverse</strong> &mdash; a mirror that scrapes nfl.com. The R package
         <span class="mono">{nflfastR}</span> is documented on
         <a href="https://cran.r-project.org/web/packages/nflfastR/refman/nflfastR.html" rel="noopener noreferrer external">CRAN</a>
@@ -94,9 +101,25 @@
       <li>That page's <em>Download Game Book (PDF)</em> link is
         <span class="mono">static.www.nfl.com/image/upload/&hellip;/gamecenter/<strong>a9a87603-4feb-11f1-abca-2c54536568a9</strong>.pdf</span>.</li>
     </ul>
-    <p style="margin-bottom:0">The league's own Game Book is keyed by exactly the UUID the mirror
-      reports, so the linkage is genuine and every record here can be traced to an official NFL
-      document.</p>
+    <ul style="margin-top:0">
+      <li>That verified UUID is now used: the Game Book is also served
+        <em>without</em> its Cloudinary version stamp, so this pipeline builds the URL itself
+        and links it on the game page. Fetched on 2026-09-25, it returned the NFL's own
+        document &mdash; quarter line AZ 7/6/3/10 = 26 and LAC 7/0/7/0 = 14, the eight official
+        scoring plays, and the final individual statistics, all matching this project's record
+        for that game.</li>
+      <li><strong>One identifier is not what its name suggests.</strong> The schedule feed's
+        <span class="mono">nfl_detail_id</span> is <em>not</em> the NFL API game UUID, and it
+        does not key the Game Book. 2021_01_DAL_TB reports
+        <span class="mono">10160000-0585-0395-7f87-0c3334b38e2e</span> while its official page
+        links <span class="mono">c5722300-b37c-11eb-9617-afa9727fab42.pdf</span>; 2021_01_JAX_HOU
+        likewise. Building a link from that column produced URLs that cannot work, so it is
+        stored under its own name and never used to build one. The whole finding is published
+        below with its evidence.</li>
+    </ul>
+    <p style="margin-bottom:0">The league's own Game Book is keyed by exactly the UUID the
+      play-by-play feed reports, so the linkage is genuine and every record here can be traced
+      to an official NFL document.</p>
   </section>
 
   <h2 class="section-title" id="caveats">Corrections to the upstream data</h2>
@@ -186,6 +209,17 @@
         upstream. Nothing is modelled, projected or estimated. Fields the feed does not publish for a
         game (for example time of possession on older seasons) render as
         <span class="mono">&mdash;</span>.</div>
+    </details>
+    <details class="detail">
+      <summary>How the direct read of nfl.com works</summary>
+      <div>The pipeline fetches <span class="mono">nfl.com/schedules/{season}/by-week/{week}</span>
+        for the most recent weeks and reads the score and status nfl.com prints for each game.
+        Two passes run over the page: every game link with the most informative accessible name
+        near it, then every canonical game slug anywhere in the markup. The second pass exists
+        because the first is provably not enough &mdash; the 2026 week-3 international game
+        (Ravens at Cowboys, Rio de Janeiro) is rendered differently and was missed, so that
+        week's slate came back one game short. A page the league renders in a different
+        template must never quietly shrink the comparison.</div>
     </details>
     <details class="detail">
       <summary>Why some links are hidden</summary>

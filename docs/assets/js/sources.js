@@ -390,6 +390,15 @@
       N.el("span", { class: "pill" }, ["Inconclusive " + (s.network_errors || 0)]),
       N.el("span", { class: "pill" }, [lc.checked_at ? ("at " + N.relativeTime(lc.checked_at)) : ""])
     ]));
+    if (s.not_checked_for_budget) {
+      panel.appendChild(N.el("div", { class: "notice notice--warn" }, [
+        N.el("h4", { text: "This audit is incomplete" }),
+        N.el("div", { text: s.not_checked_for_budget + " of " + (s.requested || 0) +
+          " URL(s) were not checked because the audit reached its " +
+          (s.budget_seconds || 0) + "-second budget. Unchecked links are shown as " +
+          "unchecked - they are not evidence of anything, in either direction." })
+      ]));
+    }
     panel.appendChild(N.el("p", { class: "card__meta" }, [
       "Sampled audit (" + (lc.checker && lc.checker.full_audit ? "full" : "sampled") + "). " +
       "Game links present in the archive: " +

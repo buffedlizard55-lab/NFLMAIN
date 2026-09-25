@@ -1542,3 +1542,24 @@ def test_data_caveats_are_in_the_manifest_and_the_report():
     assert "4.9 Data caveats" in text
     assert "A correction" in text and "the detail" in text
     assert "https://www.nfl.com/games/a-at-b-2026-reg-1" in text
+
+
+def test_link_audit_is_bounded_and_a_partial_audit_says_so(tmp_path):
+    """The audit is sampled by design, so it must be bounded by design too.
+
+    A link check that can outrun its job takes the feed down with it - the opposite of the
+    project's purpose. And a run that stopped early must never be published as a clean one.
+    """
+    import verify_links as V
+
+    src = _read("pipeline", "verify_links.py")
+    assert "--budget-seconds" in src, "no wall-clock budget on the audit"
+    assert "not_checked_for_budget" in src and '"complete": not not_checked' in src, \
+        "a budget-stopped audit is not recorded as partial"
+    assert 'time.time() - started) > args.budget_seconds' in src, \
+        "the budget is declared but never enforced"
+
+    # And the UI must surface it rather than showing an unqualified clean result.
+    js = _read(JS, "sources.js")
+    assert "not_checked_for_budget" in js and "This audit is incomplete" in js, \
+        "the Sources page would present a partial audit as a complete one"

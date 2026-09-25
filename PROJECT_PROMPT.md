@@ -97,6 +97,8 @@ These are non-negotiable and apply to every session on this repo.
 | R5 | An up-to-date current feed without manual checking. | `.github/workflows/refresh-data.yml` runs on a schedule during game windows and commits fresh snapshots; the site auto-reloads them. |
 | R6 | Clean, simple, organised, user-friendly GitHub Pages UI. | `docs/` is a dependency-free static site: scoreboard, game detail, historical archive, sources page. |
 | R7 | Maximize P(Win) / Own the Outcome. | Layered data providers with explicit fallbacks, loud failures, and a written `ROADMAP.md` of remaining work and blockers so the next session can continue without re-discovery. |
+| R8 | "Reverse engineering the nfl site" means reading it, not imitating it. | `pipeline/nfl_direct.py` reads nfl.com's own week page with no credentials, and the official Game Book PDF is linked from every game whose NFL game UUID is known. What the league's site says is published as its own artefact under `docs/data/official/` and diffed against everything else, so the two can never be confused. |
+| R9 | A claim that cannot be checked is a liability. | Every statement of fact on the site is either generated from the build or carries a link to the official source. Findings about the upstream data are recorded as `manifest.data_caveats` with the evidence that established them, including corrections to this project's own earlier claims. |
 
 ## Start-of-session checklist
 
@@ -106,3 +108,8 @@ These are non-negotiable and apply to every session on this repo.
 4. Check the latest GitHub Actions run for `refresh-data.yml` — a red run means the feed is stale.
 5. Re-verify anything you are about to claim: the feeds, the links and the numbers, from
    official sources, line by line. Do not trust this repo's prose over live evidence.
+6. Read `docs/data/manifest.json` -> `official_direct` (what nfl.com itself served last
+   build) and `data_caveats` (corrections already proved). Both are generated, so both are
+   current. If `official_direct.weeks_read` is 0, the direct read is broken — fix that
+   before anything else, because it is the project's only unauthenticated link to the
+   league.

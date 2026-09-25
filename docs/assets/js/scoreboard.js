@@ -102,6 +102,30 @@
         title: api.reason || ""
       }, ["api.nfl.com cross-check: off"]));
     }
+
+    // The direct read of nfl.com: what the league's own page said when this snapshot was
+    // built, and whether it agreed. Only ever rendered from what the build actually did -
+    // if the read failed, the pill says so instead of implying the scores were confirmed.
+    var d = m.official_direct;
+    if (d && d.attempted && d.weeks_read) {
+      var agreed = d.score_mismatches === 0 && d.unrecognised_club_names === 0 &&
+        d.official_unmatched === 0;
+      bar.appendChild(N.el("a", {
+        class: agreed ? "pill pill--ok" : "pill pill--bad",
+        href: "sources.html#direct",
+        title: "This build fetched " + d.weeks_read + " week page(s) from nfl.com itself " +
+          "and compared them with these numbers: " + d.score_matches +
+          " score(s) matched, " + d.score_mismatches + " disagreed." +
+          (d.official_unmatched ? " " + d.official_unmatched + " game(s) nfl.com lists " +
+            "are missing here." : "")
+      }, ["nfl.com direct read: " + (agreed ? "\u2713 agreed" : "\u26a0 see differences")]));
+    } else if (d && d.attempted) {
+      bar.appendChild(N.el("a", {
+        class: "pill pill--warn", href: "sources.html#direct",
+        title: "The build tried to read nfl.com's own week page and could not use the " +
+          "answer, so these scores have not been confirmed against the league."
+      }, ["nfl.com direct read: unavailable"]));
+    }
   }
 
   /* ------------------------------------------------------------- notices */

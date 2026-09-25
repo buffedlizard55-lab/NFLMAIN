@@ -114,6 +114,26 @@ function main() {
         assert(sb, 'no #statusbar element');
         assert(sb.textContent.trim().length > 0, 'statusbar empty - snapshot timestamp not rendered');
       });
+      check('scoreboard: the nfl.com direct read is stated, or its absence is', () => {
+        const bar = win.document.getElementById('statusbar');
+        const text = bar.textContent;
+        const d = manifest.official_direct;
+        if (d && d.attempted && d.weeks_read) {
+          if (d.score_mismatches || d.unrecognised_club_names || d.official_unmatched) {
+            assert(/see differences/.test(text),
+              'nfl.com and this build disagree but the scoreboard does not say so');
+          } else {
+            assert(/nfl\.com direct read/.test(text),
+              'the direct read succeeded and the scoreboard does not mention it');
+          }
+          // It must never claim agreement the build did not establish.
+          assert(!/agreed/.test(text) || d.score_mismatches === 0,
+            'the scoreboard claims the league agreed while a mismatch is recorded');
+        } else {
+          assert(!/direct read: ✓ agreed/.test(text),
+            'the scoreboard claims the league confirmed these scores without a read');
+        }
+      });
       check('scoreboard: season selector populated from real seasons', () => {
         const sel = win.document.getElementById('seasonSel');
         assert(sel, 'no #seasonSel');

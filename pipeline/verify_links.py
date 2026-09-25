@@ -58,7 +58,7 @@ UA = (
     "Mozilla/5.0 (compatible; NFLMAIN-linkcheck/1.0; "
     "+https://github.com/buffedlizard55-lab/NFLMAIN)"
 )
-DELAY_SECONDS = 1.0
+DELAY_SECONDS = 0.5
 
 
 def check_url(url: str, timeout: int = 30, category: str = "game") -> dict:
@@ -149,7 +149,7 @@ def collect(data_dir: str, per_season: int, current_sample: int, full: bool) -> 
     game_links: dict = {}
     team_links: set = set()
     gamebook_links: dict = {}
-    week_links: set = set()
+    week_links: dict = {}
     current = None
     idx = os.path.join(data_dir, "seasons", "index.json")
     if os.path.exists(idx):
@@ -177,29 +177,41 @@ def collect(data_dir: str, per_season: int, current_sample: int, full: bool) -> 
             if links.get("nfl_gamebook"):
                 books.append(links["nfl_gamebook"])
             if links.get("nfl_week"):
-                week_links.add(links["nfl_week"])
+                week_links.setdefault(season, set()).add(links["nfl_week"])
         game_links[season] = urls
         gamebook_links[season] = books
 
     rng = random.Random(20260925)  # fixed seed -> reproducible sample across runs
     selected_games: list = []
     selected_books: list = []
+    selected_weeks: list = []
     for season, urls in sorted(game_links.items()):
         if not urls:
             continue
+        # Every category is sampled, on purpose. Checking all 7,239 game links, all 500+
+        # Game Book PDFs and all 300+ week pages on every run would hammer nfl.com for no
+        # extra information: the point is to prove the URL *patterns* resolve, and one
+        # success per pattern per season does that. --full overrides it.
+        is_current = season == current.get("season")
         if full:
             selected_games.extend(urls)
             selected_books.extend(gamebook_links.get(season) or [])
+            selected_weeks.extend(sorted(week_links.get(season) or []))
             continue
-        n = current_sample if season == current.get("season") else per_season
-        n = min(n, len(urls))
-        selected_games.extend(rng.sample(urls, n))
+        n = current_sample if is_current else per_season
+        selected_games.extend(rng.sample(urls, min(n, len(urls))))
+
         books = gamebook_links.get(season) or []
         if books:
-            # Two per season plus the whole current season's sample: enough to prove the
-            # version-less Cloudinary pattern really serves the league's PDF.
-            kind = 4 if season == current.get("season") else 2
-            selected_books.extend(rng.sample(books, min(kind, len(books))))
+            # The Game Book PDF pattern is the strongest verification affordance on the
+            # site, so it gets a real sample: 4 for the current season, 1 per older season.
+            take = 4 if is_current else 1
+            selected_books.extend(rng.sample(books, min(take, len(books))))
+
+        weeks = sorted(week_links.get(season) or [])
+        if weeks:
+            take = 2 if is_current else 1
+            selected_weeks.extend(rng.sample(weeks, min(take, len(weeks))))
 
     static = [
         S.nfl_scores_url(), S.nfl_standings_url(), S.nfl_stats_url(),
@@ -208,7 +220,7 @@ def collect(data_dir: str, per_season: int, current_sample: int, full: bool) -> 
     return {
         "game_pages": selected_games,
         "gamebook_pdfs": selected_books,
-        "week_pages": sorted(week_links),
+        "week_pages": selected_weeks,
         "team_pages": sorted(team_links),
         "static_pages": static,
         "totals": {
@@ -217,7 +229,8 @@ def collect(data_dir: str, per_season: int, current_sample: int, full: bool) -> 
             "sampled_game_links": len(selected_games),
             "all_gamebook_links": sum(len(v) for v in gamebook_links.values()),
             "sampled_gamebook_links": len(selected_books),
-            "week_links": len(week_links),
+            "all_week_links": sum(len(v) for v in week_links.values()),
+            "sampled_week_links": len(selected_weeks),
             "team_links": len(team_links),
         },
     }
@@ -248,6 +261,12 @@ def main(argv=None) -> int:
     ap.add_argument("--delay", type=float, default=DELAY_SECONDS,
                     help="seconds between requests (default 1.0)")
     ap.add_argument("--limit", type=int, default=0, help="hard cap on requests (0 = none)")
+    ap.add_argument("--budget-seconds", type=int, default=420,
+                    help="wall-clock budget for the whole audit (default 420). The audit "
+                         "is sampled by design, so it is bounded by design too: whatever "
+                         "is left when the budget runs out is recorded as NOT CHECKED, "
+                         "never as passing. A link check must not be able to overrun the "
+                         "refresh job and take the feed down with it.")
     args = ap.parse_args(argv)
 
     out_path = args.out or os.path.join(args.data, "link-check.json")
@@ -275,8 +294,17 @@ def main(argv=None) -> int:
     failures: list = []
     errors: list = []
     patterns: dict = {}
+    not_checked: list = []
     started = time.time()
     for i, (cat, url) in enumerate(todo, 1):
+        if args.budget_seconds and (time.time() - started) > args.budget_seconds:
+            not_checked = [(c, u) for (c, u) in todo[i - 1:]]
+            http_util.warn(
+                f"link-check budget of {args.budget_seconds}s reached after {i - 1} "
+                f"request(s); {len(not_checked)} URL(s) were NOT checked this run. They "
+                f"are recorded as not-checked, not as passing."
+            )
+            break
         r = check_url(url, category=cat)
         r["category"] = cat
         results[url] = r
@@ -317,10 +345,22 @@ def main(argv=None) -> int:
         "totals": plan["totals"],
         "summary": {
             "requested": len(todo),
+            "checked": len(results),
             "ok": sum(1 for r in results.values() if r["ok"]),
             "failed": len(failures),
             "network_errors": len(errors),
+            # A budget-stopped audit is a PARTIAL audit and must say so. Reporting
+            # "0 failed" out of a run that never made the requests would be the exact
+            # kind of quiet success this project exists to avoid.
+            "not_checked_for_budget": len(not_checked),
+            "budget_seconds": args.budget_seconds,
+            "complete": not not_checked,
         },
+        "not_checked": [
+            {"url": u, "category": c,
+             "reason": "the audit hit its wall-clock budget before reaching this URL"}
+            for (c, u) in not_checked
+        ],
         "patterns": patterns,
         "failures": failures,
         "network_errors": errors,
@@ -330,6 +370,12 @@ def main(argv=None) -> int:
     with open(out_path, "w", encoding="utf-8") as fh:
         json.dump(doc, fh, separators=(",", ":"), ensure_ascii=False)
     http_util.log(f"link-check -> {out_path}")
+    if not_checked:
+        http_util.log(
+            f"  PARTIAL AUDIT: {len(results)} of {len(todo)} URL(s) checked within the "
+            f"{args.budget_seconds}s budget; {len(not_checked)} not checked. The published "
+            f"result says so - a partial audit is never presented as a clean one."
+        )
 
     for pat, agg in sorted(patterns.items()):
         decided = agg["ok"] + len(agg["failed"])
