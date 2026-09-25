@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NFL Scoreboard — redirecting</title>
+<!--
+  This repository's GitHub Pages site is published from the repository ROOT (Settings ->
+  Pages -> Source: main / "/"), and the token available to automation cannot change that
+  setting (it needs the `pages: write` permission). The actual site lives in /docs.
+
+  So this file exists purely to make the canonical URL work:
+      https://buffedlizard55-lab.github.io/NFLMAIN/
+  redirects to
+      https://buffedlizard55-lab.github.io/NFLMAIN/docs/
+
+  It is harmless if Pages is later repointed at /docs, because then this file is not
+  published at all. The relative redirect means it works on any host or base path,
+  including a local static server.
+-->
+<meta http-equiv="refresh" content="0; url=docs/index.html">
+<link rel="canonical" href="docs/index.html">
+<style>
+  html,body{height:100%;margin:0;background:#0b0e14;color:#e6e9ef;
+    font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  .wrap{height:100%;display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box}
+  .box{max-width:34rem;text-align:center}
+  a{color:#7fb3ff}
+  code{background:#151a24;padding:2px 6px;border-radius:4px;font-size:.9em}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="box">
+    <p>Opening the <strong>NFL scoreboard</strong>&hellip;</p>
+    <p>If nothing happens, continue to
+      <a href="docs/index.html">the scoreboard</a>.</p>
+    <p><small>All data is sourced from NFL feeds and linked back to nfl.com for review.
+      See <a href="docs/sources.html">Sources &amp; verification</a>.</small></p>
+  </div>
+</div>
+<script>
+  // Relative redirect so this works on GitHub Pages, on a local server, and on any fork
+  // base path. Absolute URLs would break on anything but the canonical host.
+  location.replace("docs/index.html" + location.search + location.hash);
+</script>
+</body>
+</html>

@@ -576,8 +576,25 @@ def normalise_game(row: dict, teams: dict, source_url: str, now_utc: datetime) -
         irregularities.append(f"unknown-team-abbreviation:{away_abbr}")
     if home_abbr and home_abbr not in teams:
         irregularities.append(f"unknown-team-abbreviation:{home_abbr}")
-    if away_score is not None and home_score is not None and away_score == home_score and status["status"] == "FINAL":
-        irregularities.append("final-game-with-tied-score")
+    if (
+        away_score is not None
+        and home_score is not None
+        and away_score == home_score
+        and status["status"] == "FINAL"
+    ):
+        # A tied regular-season game is a LEGAL NFL result: since 1974 a regular-season
+        # game that is still level after one overtime period is recorded as a tie, and
+        # the standings carry a ties column. Verified on nfl.com itself - the 2020 NFC
+        # East standings shown on a game page list Philadelphia with 1 tie, and
+        # 2002_10_ATL_PIT (Falcons 34, Steelers 34) is a real tie.
+        #
+        # Claiming otherwise would be the project telling the user something false about
+        # the sport, which is exactly what R1/R6 forbid. Only a POSTSEASON tie is
+        # genuinely impossible, because playoff overtime continues until someone scores.
+        if (season_type or "").upper().startswith("POST"):
+            irregularities.append("postseason-game-with-tied-score")
+        else:
+            irregularities.append("tied-game")
 
     result = to_int(row.get("result"))
     if (

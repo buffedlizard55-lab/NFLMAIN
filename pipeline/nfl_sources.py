@@ -507,6 +507,57 @@ NFL_COM_NICKS_LEGACY = {
     "SL": "rams",
 }
 
+# Era-dependent GAME-SLUG nicknames.
+#
+# nfl.com's /games/ slug uses the nickname the club had AT THE TIME of the game, while the
+# page's display name and the /teams/ slug both use the CURRENT nickname. So a 2003
+# Washington game lives at .../games/redskins-at-giants-2003-reg-14 even though the page
+# is titled "Washington Commanders at New York Giants 2003 REG 14 - Game Center".
+#
+# Every boundary below was verified with a real HTTP request on 2026-09-25, not assumed:
+#   redskins-at-giants-2003-reg-14      -> 200, WAS 20 NYG 7, Dec 7 2003, Giants Stadium
+#   49ers-at-redskins-2019-reg-7        -> linked from the 2020 page below (nfl.com's own link)
+#   football-team-at-49ers-2020-reg-14  -> 200, WAS 23 SF 15, Dec 13 2020
+#   football-team-at-bills-2021-reg-3   -> 200, WAS 21 BUF 43, Sep 26 2021
+#                                          (independently matches our published 21-43)
+#   commanders-*                        -> 2026 links resolved in the live link check
+# And the wrong slug was proven to 404:
+#   commanders-at-giants-2003-reg-14    -> 404
+#   commanders-at-49ers-2020-reg-14     -> 404
+#
+# Within this project's 1999-2026 archive Washington is the only club whose slug nickname
+# changed. Relocated clubs kept their nickname across the move (Oakland/Las Vegas
+# "raiders", San Diego/LA "chargers", St. Louis/LA "rams"), and Houston became "titans"
+# from 1999, before this archive starts. If a future link check reports 404s clustered on
+# one club, add that club here with verified evidence - do not guess a boundary.
+NFL_COM_GAME_NICK_BY_ERA = {
+    "WAS": ((None, 2019, "redskins"), (2020, 2021, "football-team"), (2022, None, "commanders")),
+    "WSH": ((None, 2019, "redskins"), (2020, 2021, "football-team"), (2022, None, "commanders")),
+}
+
+
+def nfl_com_game_nick(abbr: Optional[str], season: Optional[int]) -> Optional[str]:
+    """Nickname to use inside a /games/ slug for ``abbr`` in ``season``.
+
+    Falls back to the current then historical nickname tables when the club has no
+    era-dependent slug. Returns None rather than guessing (PROJECT_PROMPT R2).
+    """
+    if not abbr:
+        return None
+    key = abbr.upper()
+    eras = NFL_COM_GAME_NICK_BY_ERA.get(key)
+    if eras and season is not None:
+        try:
+            yr = int(season)
+        except (TypeError, ValueError):
+            yr = None
+        if yr is not None:
+            for lo, hi, nick in eras:
+                if (lo is None or yr >= lo) and (hi is None or yr <= hi):
+                    return nick
+    return NFL_COM_NICKS.get(key) or NFL_COM_NICKS_LEGACY.get(key)
+
+
 # City portion of the nfl.com club-page slug. Verified instances (2026-09-25):
 #   https://www.nfl.com/teams/arizona-cardinals
 #   https://www.nfl.com/teams/san-francisco-49ers
@@ -551,6 +602,26 @@ NFL_COM_CITY = {
     "TB": "tampa-bay",
     "TEN": "tennessee",
     "WAS": "washington",
+
+    # Codes for relocated franchises. nfl.com files the whole history of a moved club
+    # under its CURRENT city, so an Oakland-era game page links to the Las Vegas team
+    # page. Verified directly on 2026-09-25 from the standings block of
+    # https://www.nfl.com/games/raiders-at-chiefs-1999-reg-17, which lists the 1999
+    # AFC West as:
+    #   OAK -> https://www.nfl.com/teams/las-vegas-raiders
+    #   SD  -> https://www.nfl.com/teams/los-angeles-chargers
+    # "LV" is the present-day code for the same club as OAK, so it takes the same city.
+    # "STL" (the Rams through 2015) follows the same franchise-continuity rule as OAK and
+    # SD; it is not independently probed here and is confirmed by the link checker, which
+    # samples team links straight out of the published season files and hides any that
+    # do not resolve.
+    "LV": "las-vegas",
+    "OAK": "las-vegas",
+    "SD": "los-angeles",
+    "STL": "los-angeles",
+    # "WSH" is an alternative historical code for Washington. Verified: the 2003, 2020 and
+    # 2021 game pages all link to /teams/washington-commanders regardless of era.
+    "WSH": "washington",
 }
 
 _SEASON_TYPE_SLUG = {"REG": "reg", "POST": "post", "PRE": "pre"}
@@ -581,8 +652,9 @@ def nfl_game_url(
     """
     if not all([away_abbr, home_abbr, season, season_type, week]):
         return None
-    a = NFL_COM_NICKS.get(away_abbr.upper()) or NFL_COM_NICKS_LEGACY.get(away_abbr.upper())
-    h = NFL_COM_NICKS.get(home_abbr.upper()) or NFL_COM_NICKS_LEGACY.get(home_abbr.upper())
+    # Era-aware: the slug nickname is the one the club used when the game was played.
+    a = nfl_com_game_nick(away_abbr, season)
+    h = nfl_com_game_nick(home_abbr, season)
     slug = _SEASON_TYPE_SLUG.get(str(season_type).upper())
     if not a or not h or not slug:
         return None
