@@ -1,6 +1,6 @@
 # Data verification report
 
-*Generated automatically by `pipeline/build_site_data.py` v1.0.0 at **2026-09-25T15:44:07Z UTC**.*
+*Generated automatically by `pipeline/build_site_data.py` v1.0.0 at **2026-09-25T16:01:02Z UTC**.*
 
 > Do not edit by hand. This file is the audit trail required by `PROJECT_PROMPT.md` rules R3 and R4: every number on the site must trace back to an official source, and every irregularity must be flagged for human review.
 
@@ -9,7 +9,7 @@
 | Upstream URL | Mode | HTTP | Bytes | SHA-256 (first 16) |
 |---|---|---|---|---|
 | `https://github.com/nflverse/nflverse-data/releases/download/teams/teams_colors_logos.csv` | network | 200 | 18,919 | `4eab559fcf89cb4e` |
-| `https://github.com/nflverse/nflverse-data/releases/download/schedules/games.csv` | network | 200 | 2,180,911 | `63f33fbe14be9fe7` |
+| `https://github.com/nflverse/nflverse-data/releases/download/schedules/games.csv` | network | 200 | 2,180,910 | `1a0a77e790157bea` |
 | `https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2026.csv.gz` | network | 200 | 2,216,307 | `fba617ba87b0cc7c` |
 
 ## 2. Source registry and provenance
@@ -151,7 +151,7 @@ These requests were made by the pipeline during *this* build. No credentials wer
 
 | Kind | Count | Example game |
 |---|---|---|
-| `final-game-with-tied-score` | 15 | `2002_10_ATL_PIT` |
+| `tied-game` | 15 | `2002_10_ATL_PIT` |
 
 ### How to read these
 
@@ -169,21 +169,21 @@ These requests were made by the pipeline during *this* build. No credentials wer
 
 ### Full list (first 200)
 
-* `final-game-with-tied-score` in `2002_10_ATL_PIT` (2002 REG wk 10)
-* `final-game-with-tied-score` in `2008_11_PHI_CIN` (2008 REG wk 11)
-* `final-game-with-tied-score` in `2012_10_STL_SF` (2012 REG wk 10)
-* `final-game-with-tied-score` in `2013_12_MIN_GB` (2013 REG wk 12)
-* `final-game-with-tied-score` in `2014_06_CAR_CIN` (2014 REG wk 6)
-* `final-game-with-tied-score` in `2016_07_SEA_ARI` (2016 REG wk 7)
-* `final-game-with-tied-score` in `2016_08_WAS_CIN` (2016 REG wk 8)
-* `final-game-with-tied-score` in `2018_01_PIT_CLE` (2018 REG wk 1)
-* `final-game-with-tied-score` in `2018_02_MIN_GB` (2018 REG wk 2)
-* `final-game-with-tied-score` in `2019_01_DET_ARI` (2019 REG wk 1)
-* `final-game-with-tied-score` in `2020_03_CIN_PHI` (2020 REG wk 3)
-* `final-game-with-tied-score` in `2021_10_DET_PIT` (2021 REG wk 10)
-* `final-game-with-tied-score` in `2022_01_IND_HOU` (2022 REG wk 1)
-* `final-game-with-tied-score` in `2022_13_WAS_NYG` (2022 REG wk 13)
-* `final-game-with-tied-score` in `2025_04_GB_DAL` (2025 REG wk 4)
+* `tied-game` in `2002_10_ATL_PIT` (2002 REG wk 10)
+* `tied-game` in `2008_11_PHI_CIN` (2008 REG wk 11)
+* `tied-game` in `2012_10_STL_SF` (2012 REG wk 10)
+* `tied-game` in `2013_12_MIN_GB` (2013 REG wk 12)
+* `tied-game` in `2014_06_CAR_CIN` (2014 REG wk 6)
+* `tied-game` in `2016_07_SEA_ARI` (2016 REG wk 7)
+* `tied-game` in `2016_08_WAS_CIN` (2016 REG wk 8)
+* `tied-game` in `2018_01_PIT_CLE` (2018 REG wk 1)
+* `tied-game` in `2018_02_MIN_GB` (2018 REG wk 2)
+* `tied-game` in `2019_01_DET_ARI` (2019 REG wk 1)
+* `tied-game` in `2020_03_CIN_PHI` (2020 REG wk 3)
+* `tied-game` in `2021_10_DET_PIT` (2021 REG wk 10)
+* `tied-game` in `2022_01_IND_HOU` (2022 REG wk 1)
+* `tied-game` in `2022_13_WAS_NYG` (2022 REG wk 13)
+* `tied-game` in `2025_04_GB_DAL` (2025 REG wk 4)
 
 ## 6. Manual review links
 
