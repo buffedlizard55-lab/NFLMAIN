@@ -284,7 +284,21 @@ def _as_parsed(record: dict) -> dict:
     }
 
 
-def parse_week_html(raw: str, *, source_url: str = "") -> dict:
+def _week_of(url_or_slug: Optional[str]) -> Optional[tuple]:
+    """(season, SEASON_TYPE, week) as encoded in a canonical nfl.com game slug."""
+    if not url_or_slug:
+        return None
+    m = _GAME_SLUG_RE.search(str(url_or_slug))
+    if not m:
+        return None
+    try:
+        return (int(m.group("season")), m.group("season_type").upper(), int(m.group("week")))
+    except (TypeError, ValueError):  # pragma: no cover - regex guarantees digits
+        return None
+
+
+def parse_week_html(raw: str, *, source_url: str = "",
+                    week_filter: Optional[tuple] = None) -> dict:
     """Extract the games nfl.com publishes on a week page.
 
     Two passes, because one is provably not enough (see ``_GAME_SLUG_RE``):
@@ -306,6 +320,24 @@ def parse_week_html(raw: str, *, source_url: str = "") -> dict:
     heuristic_used = 0
     slug_scan_added = 0
     skipped_not_game = 0
+    other_week_slugs = set()
+
+    want = None
+    if week_filter:
+        want = (int(week_filter[0]), str(week_filter[1]).upper(), int(week_filter[2]))
+
+    def _in_this_week(slug: str) -> bool:
+        """Is this game actually part of the week we asked for?
+
+        A real nfl.com week page links to games OUTSIDE that week - the next week's slate,
+        previous matchups, related links. Without this guard the 2026 week-2 page
+        contributed 16 week-3 games to week 2's slate, which the comparison then reported
+        as 16 games "nfl.com lists that this build has no record of". Excluding them is
+        necessary; excluding them SILENTLY would not be, so they are counted.
+        """
+        if not want:
+            return True
+        return _week_of(slug) == want
 
     def _record(slug: str, href: Optional[str], parsed: Optional[dict], method: str):
         has_score = bool(parsed) and parsed.get("away_score") is not None and \
@@ -397,6 +429,9 @@ def parse_week_html(raw: str, *, source_url: str = "") -> dict:
         if not canonical and not named_two_clubs:
             skipped_not_game += 1
             continue
+        if canonical and not _in_this_week(slug):
+            other_week_slugs.add(slug)
+            continue
 
         record = _record(slug, href, best, method or "link-without-a-label")
         if slug in seen:
@@ -414,6 +449,9 @@ def parse_week_html(raw: str, *, source_url: str = "") -> dict:
     for match in _GAME_SLUG_RE.finditer(raw or ""):
         slug = normalise_game_url("/games/" + match.group("slug"))
         if not slug or slug in seen:
+            continue
+        if not _in_this_week(slug):
+            other_week_slugs.add(slug)
             continue
         # Try to attach a label from the surrounding markup; if there is none the game is
         # still reported, with null scores, rather than dropped.
@@ -447,6 +485,7 @@ def parse_week_html(raw: str, *, source_url: str = "") -> dict:
             "games_parsed": len(games),
             "games_found_by_slug_scan": slug_scan_added,
             "links_skipped_not_game_like": skipped_not_game,
+            "links_to_other_weeks": len(other_week_slugs),
             "aria_labels_seen": labels_seen,
             "markup_heuristic_used": heuristic_used,
         },
@@ -542,7 +581,8 @@ def fetch_week(
             result["error"] = "nfl.com served its 404 page for this week"
             return result
 
-    parsed = parse_week_html(raw_text, source_url=url)
+    parsed = parse_week_html(raw_text, source_url=url,
+                             week_filter=(season, season_type, week))
     result["games"] = parsed["games"]
     result["parse"] = parsed["parse"]
     result["ok"] = bool(parsed["games"])

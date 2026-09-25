@@ -1599,3 +1599,38 @@ def test_prose_near_a_link_cannot_be_mistaken_for_a_game():
     assert g["away_nick"] is None, "a non-club pair of names must not become a team"
     assert g["away_score"] is None and g["home_score"] is None
     assert g["status"] != "FINAL", "no status may be attached from unmatched prose"
+
+
+def test_a_week_read_contains_only_that_week():
+    """A real nfl.com week page links to games outside the week - next week's slate,
+    previous matchups, related links.
+
+    Observed in the live data committed at 2026-09-25T18:38Z: the 2026 week-2 page
+    contributed 16 week-3 games to week 2's slate, and the comparison reported them as
+    "16 games nfl.com lists that this build has no record of" - a false alarm on every
+    single run, and one that would have grown every week. Excluded now, and counted so the
+    exclusion is visible rather than silent.
+    """
+    import nfl_direct as D
+
+    html = ('<a href="/games/lions-at-bills-2026-reg-2" '
+            'aria-label="Lions 31, Bills 41, FINAL, Sunday, September 13th"></a>'
+            '<a href="/games/chargers-at-bills-2026-reg-3" '
+            'aria-label="Chargers at Bills, Sunday, September 27th, 1:00 PM"></a>')
+    parsed = D.parse_week_html(html, week_filter=(2026, "REG", 2))
+    assert [g["slug"] for g in parsed["games"]] == ["/games/lions-at-bills-2026-reg-2"]
+    assert parsed["parse"]["links_to_other_weeks"] == 1
+
+    # Without a filter the caller gets everything, which is what the tests above use.
+    assert len(D.parse_week_html(html)["games"]) == 2
+
+
+def test_week_of_reads_the_week_out_of_an_official_slug():
+    import nfl_direct as D
+
+    assert D._week_of("/games/lions-at-bills-2026-reg-2") == (2026, "REG", 2)
+    assert D._week_of("https://www.nfl.com/games/ravens-at-cowboys-2026-reg-3") == \
+        (2026, "REG", 3)
+    assert D._week_of("/games/49ers-at-cowboys-2026-post-21") == (2026, "POST", 21)
+    assert D._week_of("/games/unknown-game") is None
+    assert D._week_of(None) is None
