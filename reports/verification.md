@@ -1,6 +1,6 @@
 # Data verification report
 
-*Generated automatically by `pipeline/build_site_data.py` v1.0.0 at **2026-09-25T16:06:12Z UTC**.*
+*Generated automatically by `pipeline/build_site_data.py` v1.1.0 at **2026-09-25T17:32:24Z UTC**.*
 
 > Do not edit by hand. This file is the audit trail required by `PROJECT_PROMPT.md` rules R3 and R4: every number on the site must trace back to an official source, and every irregularity must be flagged for human review.
 
@@ -9,7 +9,7 @@
 | Upstream URL | Mode | HTTP | Bytes | SHA-256 (first 16) |
 |---|---|---|---|---|
 | `https://github.com/nflverse/nflverse-data/releases/download/teams/teams_colors_logos.csv` | network | 200 | 18,919 | `4eab559fcf89cb4e` |
-| `https://github.com/nflverse/nflverse-data/releases/download/schedules/games.csv` | network | 200 | 2,180,910 | `1a0a77e790157bea` |
+| `https://github.com/nflverse/nflverse-data/releases/download/schedules/games.csv` | network | 200 | 2,180,910 | `360038990f9f7360` |
 | `https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2026.csv.gz` | network | 200 | 2,216,307 | `fba617ba87b0cc7c` |
 
 ## 2. Source registry and provenance
@@ -155,16 +155,24 @@ These requests were made by the pipeline during *this* build. No credentials wer
 
 ### How to read these
 
+The kinds below are exactly the ones `normalize.py` emits; this table is kept in sync with the legend on the site's Sources page. When the pipeline gains a new flag kind, this table and `docs/assets/js/sources.js` must gain a row too.
+
 | Kind | Meaning | Action |
 |---|---|---|
+| `tied-game` | A FINAL regular-season game with equal scores. This is a LEGAL NFL result: since 1974 a regular-season game still level after one overtime period is recorded as a tie, and the league's own standings carry a ties column. Listed for transparency, not because it is wrong. | No action; the official Game Center page is linked on every record. Sampled and confirmed on nfl.com on 2026-09-25 (GB 40 DAL 40, 2025 wk 4; SEA 6 ARI 6, 2016 wk 7). |
+| `postseason-game-with-tied-score` | A FINAL POSTSEASON game with equal scores, which cannot happen: playoff overtime continues until a team scores. | Verify against the official NFL game page; escalate upstream if nfl.com also shows a tie. |
 | `past-window-without-score` | Kickoff is more than 4h45m in the past but no score is published upstream. Usually a postponed/cancelled game, or the mirror has not caught up. | Compare against <https://www.nfl.com/scores/>. |
 | `score-recorded-before-kickoff` | A score exists for a game whose kickoff is more than 6h in the future. | Check the upstream `gameday`/`gametime`. |
-| `final-game-with-tied-score` | A game marked FINAL has equal scores, which is impossible in the NFL. | Verify against the official NFL game page. |
+| `missing-kickoff-time` | Neither a score nor a usable kickoff date exists upstream, so the status cannot be stated honestly. | Check the official scoreboard if a link is present; otherwise the row is unfixable here. |
+| `score-without-kickoff-time` | A score exists but no kickoff time was published upstream (common for older seasons). Status is FINAL on the score alone and marked estimated. | None; this is normal in the historical archive. |
+| `missing-game-id` / `missing-team-abbreviation` | An upstream row is missing its identity fields. | Upstream data bug; report to nflverse. |
+| `unknown-team-abbreviation:XXX` | A team code in the feed is not in the teams metadata. | Add the mapping; do not guess a name. |
 | `result-does-not-match-scores` | Upstream `result` column disagrees with `home_score - away_score`. | Upstream data bug; report to nflverse. |
 | `missing-nfl-gsis-old-game-id` | No NFL GSIS 10-digit id, so the record cannot be linked to an official NFL identifier. | Expected for some preseason games. |
-| `unknown-team-abbreviation` | A team code in the feed is not in the teams metadata. | Add the mapping; do not guess a name. |
 | `pbp-*-disagrees-with-schedule` | The play-by-play running score does not end at the scheduled final score. | Treat the game as suspect until reconciled. |
+| `quarter-line-*-disagrees-with-schedule` | The per-quarter line derived from the play-by-play does not sum to the schedule's final score. | Compare against the quarter line on the official Game Center page. |
 | `nfl-api-id-mismatch-between-schedule-and-pbp` | The two feeds disagree on the official NFL game UUID. | Blocks api.nfl.com cross-referencing. |
+| `pbp-missing-required-columns:...` | Upstream play-by-play schema no longer carries a required column; that season's build is refused. | Update `PBP_REQUIRED_COLUMNS` after reading the new header. |
 | `pbp-empty` | A play-by-play file was written with zero plays. | Upstream has not published the game yet. |
 
 ### Full list (first 200)
