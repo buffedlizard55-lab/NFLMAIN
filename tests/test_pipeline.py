@@ -366,8 +366,10 @@ def test_normalise_game_flags_inconsistent_upstream_data():
     g = normalise_game(_sched_row(result="99"), _teams(), "u", NOW)
     assert "result-does-not-match-scores" in g["irregularities"]
 
+    # A regular-season tie is a LEGAL NFL result, so it is recorded for transparency
+    # under "tied-game" rather than being called an error.
     g = normalise_game(_sched_row(away_score="20", home_score="20", result="0"), _teams(), "u", NOW)
-    assert "final-game-with-tied-score" in g["irregularities"]
+    assert "tied-game" in g["irregularities"]
     assert g["winner"] is None, "a tie has no winner; do not pick one"
 
     g = normalise_game(_sched_row(away_team="ZZZ"), _teams(), "u", NOW)
@@ -536,7 +538,7 @@ def test_offline_build_produces_a_complete_valid_snapshot(tmp_path):
     assert manifest["coverage"]["current_season"] == 2026
     assert manifest["irregularities"]["total"] >= 5, "the seeded bad rows must be caught"
     kinds = set(manifest["irregularities"]["by_kind"])
-    assert {"final-game-with-tied-score", "result-does-not-match-scores",
+    assert {"tied-game", "result-does-not-match-scores",
             "past-window-without-score", "unknown-team-abbreviation",
             "missing-nfl-gsis-old-game-id"} <= kinds
     assert manifest["limitations"], "limitations must be derived from the build state"
@@ -818,11 +820,11 @@ def _verify_exit_code(argv):
 
 
 def _fake_check(status=None, error=None, ok=None):
-    def _f(url, timeout=30):
+    def _f(url, timeout=30, category="game"):
         real_ok = ok if ok is not None else (status == 200)
         return {
             "url": url, "status": status, "ok": bool(real_ok), "final_url": url,
-            "redirected": False, "looks_like_game_center": False,
+            "verdict": "fake", "redirected": False, "looks_like_game_center": False,
             "looks_like_team_page": False, "elapsed_s": 0.0, "error": error,
         }
     return _f
@@ -895,3 +897,113 @@ def test_summarise_run_honours_an_explicit_data_dir(tmp_path):
     text = summary.read_text(encoding="utf-8")
     assert "NFL data refresh" in text
     assert "No manifest" not in text, "--data was ignored"
+
+
+# --------------------------------------------------------------------------- #
+# nfl.com game-slug construction: era-dependent nicknames
+# --------------------------------------------------------------------------- #
+#
+# Every expected URL below was confirmed with a real HTTP request on 2026-09-25.
+# They are pinned as tests so a future edit cannot silently revert to a flat
+# nickname table and start emitting 404s again.
+
+@pytest.mark.parametrize("away,home,season,stype,week,expected", [
+    # Verified 200: "Washington Commanders at New York Giants 2003 REG 14 - Game Center"
+    ("WSH", "NYG", 2003, "REG", 14,
+     "https://www.nfl.com/games/redskins-at-giants-2003-reg-14"),
+    # Verified 200: WAS 23 SF 15, Dec 13 2020
+    ("WAS", "SF", 2020, "REG", 14,
+     "https://www.nfl.com/games/football-team-at-49ers-2020-reg-14"),
+    # Verified 200: WAS 21 BUF 43, Sep 26 2021 (matches our published 21-43)
+    ("WAS", "BUF", 2021, "REG", 3,
+     "https://www.nfl.com/games/football-team-at-bills-2021-reg-3"),
+    # Renamed in 2022
+    ("WAS", "DET", 2022, "REG", 2,
+     "https://www.nfl.com/games/commanders-at-lions-2022-reg-2"),
+    ("WSH", "PHI", 2026, "REG", 1,
+     "https://www.nfl.com/games/commanders-at-eagles-2026-reg-1"),
+    # Verified 200: Oakland 41 Kansas City 38 OT, Jan 2 2000 - the slug is era-independent
+    ("OAK", "KC", 1999, "REG", 17,
+     "https://www.nfl.com/games/raiders-at-chiefs-1999-reg-17"),
+    # Verified 200 earlier in this project: Arizona 26 LA Chargers 14
+    ("ARI", "LAC", 2026, "REG", 1,
+     "https://www.nfl.com/games/cardinals-at-chargers-2026-reg-1"),
+    # Relocated clubs keep their nickname in the slug
+    ("SD", "OAK", 2010, "REG", 5,
+     "https://www.nfl.com/games/chargers-at-raiders-2010-reg-5"),
+    ("STL", "SEA", 2010, "REG", 5,
+     "https://www.nfl.com/games/rams-at-seahawks-2010-reg-5"),
+])
+def test_game_slug_uses_the_nickname_of_that_era(away, home, season, stype, week, expected):
+    assert S.nfl_game_url(away, home, season, stype, week) == expected
+
+
+def test_the_three_known_washington_boundaries_are_all_verified():
+    """redskins -> football-team -> commanders, with the years pinned."""
+    assert S.nfl_com_game_nick("WAS", 2019) == "redskins"
+    assert S.nfl_com_game_nick("WAS", 2020) == "football-team"
+    assert S.nfl_com_game_nick("WAS", 2021) == "football-team"
+    assert S.nfl_com_game_nick("WAS", 2022) == "commanders"
+    assert S.nfl_com_game_nick("WSH", 2003) == "redskins"
+
+
+@pytest.mark.parametrize("away,home,season,stype,week", [
+    (None, "NYG", 2003, "REG", 14),
+    ("WSH", None, 2003, "REG", 14),
+    ("XXX", "NYG", 2003, "REG", 14),   # unknown club
+    ("WSH", "ZZZ", 2003, "REG", 14),
+    ("WSH", "NYG", None, "REG", 14),
+    ("WSH", "NYG", 2003, "BANANA", 14),  # unknown season type
+    ("WSH", "NYG", 2003, "REG", None),
+])
+def test_game_slug_returns_none_rather_than_a_guessed_url(away, home, season, stype, week):
+    assert S.nfl_game_url(away, home, season, stype, week) is None
+
+
+def test_team_page_slug_always_uses_the_current_nickname():
+    """nfl.com's own 2003 game page links to /teams/washington-commanders, not redskins."""
+    assert S.nfl_team_url("WAS") == "https://www.nfl.com/teams/washington-commanders"
+    assert S.nfl_team_url("OAK") == "https://www.nfl.com/teams/las-vegas-raiders"
+    assert S.nfl_team_url(None) is None
+
+
+# --------------------------------------------------------------------------- #
+# Ties: the site must not tell the user something false about NFL rules
+# --------------------------------------------------------------------------- #
+
+def test_regular_season_tie_is_not_called_impossible():
+    """NFL regular-season ties are legal (since 1974) and standings carry a ties column.
+
+    Verified on nfl.com itself: the 2020 NFC East standings rendered on a game page list
+    Philadelphia with 1 tie, and 2002_10_ATL_PIT (Falcons 34, Steelers 34) is a real tie
+    present in the published archive.
+    """
+    g = normalise_game(
+        _sched_row(game_type="REG", away_score="34", home_score="34",
+                   result="0", overtime="1"),
+        _teams(), "u", NOW,
+    )
+    assert g["status"] == "FINAL"
+    assert g["winner"] is None, "a tie has no winner"
+    assert "tied-game" in g["irregularities"]
+    assert "final-game-with-tied-score" not in g["irregularities"]
+    assert "postseason-game-with-tied-score" not in g["irregularities"]
+
+
+def test_postseason_tie_is_still_flagged_as_a_real_error():
+    """Playoff overtime continues until a winner emerges, so this one IS impossible."""
+    g = normalise_game(
+        _sched_row(game_type="POST", week="19", away_score="20", home_score="20",
+                   result="0", overtime="1"),
+        _teams(), "u", NOW,
+    )
+    assert "postseason-game-with-tied-score" in g["irregularities"]
+    assert "tied-game" not in g["irregularities"]
+
+
+def test_site_never_displays_the_false_claim_that_ties_are_impossible():
+    src = _read(JS, "sources.js")
+    assert "impossible under NFL rules" not in src, (
+        "The site asserts something false about the NFL. Regular-season ties are legal."
+    )
+    assert "LEGAL NFL result" in src, "the corrected explanation is missing"

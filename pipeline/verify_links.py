@@ -58,8 +58,30 @@ UA = (
 DELAY_SECONDS = 1.0
 
 
-def check_url(url: str, timeout: int = 30) -> dict:
-    """Fetch ``url`` and report the real outcome. Never raises."""
+def check_url(url: str, timeout: int = 30, category: str = "game") -> dict:
+    """Fetch ``url`` and report the real outcome. Never raises.
+
+    WHAT COUNTS AS PROVEN BROKEN, AND WHY
+    -------------------------------------
+    An earlier version also required the response body to contain the text "Game Center"
+    before calling a game link good. That heuristic produced FALSE FAILURES: a live check
+    of https://www.nfl.com/games/raiders-at-chiefs-1999-reg-17 returned HTTP 200 at the
+    same URL and is a genuine game center page (Oakland 41, Kansas City 38, OT; title
+    "Las Vegas Raiders at Kansas City Chiefs 1999 REG 17 - Game Center"), yet the string
+    was not found in the first 64 KB read. Six working links would have been hidden from
+    users on the strength of a weak heuristic.
+
+    Meanwhile a genuinely wrong slug was proven to answer HTTP 404:
+    https://www.nfl.com/games/commanders-at-giants-2003-reg-14 -> 404, because the 2003
+    slug uses the nickname of that era (redskins-at-giants-2003-reg-14, verified HTTP 200
+    with title "Washington Commanders at New York Giants 2003 REG 14 - Game Center").
+
+    So the verdict now rests only on evidence proven reliable: the HTTP status, and
+    whether we were redirected away from what we asked for. The body heuristic is still
+    computed and reported as ``looks_like_game_center``, but it no longer decides
+    anything - a signal known to produce false negatives must not be allowed to hide a
+    link that works.
+    """
     req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "text/html,*/*"})
     started = time.time()
     try:
@@ -68,22 +90,32 @@ def check_url(url: str, timeout: int = 30) -> dict:
             final = resp.geturl()
             status = getattr(resp, "status", 200)
         text = body.decode("utf-8", "replace")
-        # A valid game center page carries a recognisable title/heading. The homepage
-        # fallback does not mention "Game Center".
-        is_game_page = "/games/" in final and (
-            "game center" in text.lower() or "Game Center" in text
-        )
+        is_game_page = "/games/" in final and "game center" in text.lower()
         is_teams_page = "/teams/" in final
-        ok = status == 200 and final.rstrip("/") == url.rstrip("/")
-        if "/games/" in url and status == 200 and not is_game_page:
-            # Landed on 200 but not on a game center page -> slug probably wrong.
-            ok = False
+        same_url = final.split("?")[0].rstrip("/") == url.rstrip("/")
+        redirected = not same_url
+
+        if status != 200:
+            ok, verdict = False, "HTTP %s" % status
+        elif same_url:
+            ok = True
+            verdict = "HTTP 200 at the requested URL"
+            if not is_game_page:
+                verdict += " (body heuristic did not confirm; not decisive)"
+        elif category == "static" and "nfl.com" in final:
+            # Top-level navigation links legitimately redirect to a canonical deeper page,
+            # e.g. https://www.nfl.com/stats/ -> /stats/player-stats/ (observed live).
+            ok, verdict = True, "HTTP 200 via redirect to %s" % final
+        else:
+            ok, verdict = False, "HTTP 200 but redirected away to %s" % final
+
         return {
             "url": url,
             "status": status,
             "ok": bool(ok),
+            "verdict": verdict,
             "final_url": final,
-            "redirected": final.rstrip("/") != url.rstrip("/"),
+            "redirected": bool(redirected),
             "looks_like_game_center": is_game_page,
             "looks_like_team_page": is_teams_page,
             "elapsed_s": round(time.time() - started, 2),
@@ -92,6 +124,7 @@ def check_url(url: str, timeout: int = 30) -> dict:
     except urllib.error.HTTPError as exc:
         return {
             "url": url, "status": exc.code, "ok": False,
+            "verdict": "HTTP %s - the URL did not resolve" % exc.code,
             "final_url": url, "redirected": False,
             "looks_like_game_center": False, "looks_like_team_page": False,
             "elapsed_s": round(time.time() - started, 2),
@@ -100,6 +133,7 @@ def check_url(url: str, timeout: int = 30) -> dict:
     except Exception as exc:  # network/DNS/timeout - report, do not crash
         return {
             "url": url, "status": None, "ok": False,
+            "verdict": "no HTTP response - inconclusive, not evidence of a bad link",
             "final_url": url, "redirected": False,
             "looks_like_game_center": False, "looks_like_team_page": False,
             "elapsed_s": round(time.time() - started, 2),
@@ -207,7 +241,7 @@ def main(argv=None) -> int:
     patterns: dict = {}
     started = time.time()
     for i, (cat, url) in enumerate(todo, 1):
-        r = check_url(url)
+        r = check_url(url, category=cat)
         r["category"] = cat
         results[url] = r
         pat = pattern_of(url)
@@ -228,7 +262,8 @@ def main(argv=None) -> int:
             # genuine evidence that our constructed link is wrong.
             agg["failed"].append(url)
             failures.append({"url": url, "status": r["status"], "category": cat,
-                             "final_url": r["final_url"]})
+                             "final_url": r["final_url"],
+                             "verdict": r.get("verdict")})
         if i % 25 == 0 or i == len(todo):
             http_util.log(f"  {i}/{len(todo)} checked, {len(failures)} failed")
         if args.delay and i < len(todo):

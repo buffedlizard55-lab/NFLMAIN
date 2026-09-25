@@ -31,6 +31,27 @@ NFL, with no fabrication.*
 
 ---
 
+## Priority 0 — one manual step needed in the repository settings
+
+**GitHub Pages is publishing from the repository root, not `/docs`.** The automation token
+available to this project does not have the `pages: write` permission, so it cannot change
+the setting (`PUT /repos/{owner}/{repo}/pages` answers HTTP 403 *"Resource not accessible by
+integration"*).
+
+A root `index.html` redirect was added so the canonical URL works anyway:
+
+* <https://buffedlizard55-lab.github.io/NFLMAIN/> → `docs/index.html` (redirect, works today)
+* <https://buffedlizard55-lab.github.io/NFLMAIN/docs/> → the site directly
+
+**Optional cleanup, needs a human:** Settings → Pages → Build and deployment → Source
+*"Deploy from a branch"*, Branch `main`, folder `/docs`. That removes the redirect hop and
+gives clean URLs. Until then everything works; the URLs just carry `/docs/`.
+
+A `.nojekyll` file is committed at the repository root so Pages serves the site as plain
+static files instead of running Jekyll over it.
+
+---
+
 ## Priority 1 — do this next session
 
 ### 1.1 Turn on the official NFL cross-check
@@ -136,6 +157,8 @@ would exceed it, rather than letting the repository grow until Pages slows down.
 | **GitHub Pages CDN caching** | Stale snapshot served | The client appends a cache-buster and uses `no-store` on manual refresh |
 | **Hotlinked nfl.com logo assets** | Images could break or be blocked | Two-step fallback (nfl.com asset → wikipedia asset → initials), so the UI never shows a broken image |
 | **Repository size** | Slow clones, slow Pages | Historical play-by-play is on demand; per-game files are compacted (null keys dropped) |
+| **No `pages: write` permission** | Cannot repoint Pages at `/docs` automatically | Root `index.html` redirect makes the canonical URL work regardless; a human can change the setting (Priority 0) |
+| **Legacy club codes have no team page** | 1,043 of 15,096 team slots (OAK, SD, STL, LV) had no nfl.com team link | Fixed by mapping relocated franchises to their current city, verified from nfl.com's own standings block on a 1999 game page |
 | **Legal / trademark** | Takedown risk | Independent, non-commercial, attributed, every record links back to nfl.com, README states it will be removed on request |
 | **Build sandbox has no egress to nfl.com** | Cannot verify live locally | CI performs a real live build with assertions; `verify_links.py` does real HTTP checks in CI |
 

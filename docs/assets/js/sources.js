@@ -310,7 +310,8 @@
     var MEANING = {
       "past-window-without-score": "Kickoff is more than 4h45m past but no score is published. Could be postponed/cancelled or a lagging feed; the two are indistinguishable in the data.",
       "score-recorded-before-kickoff": "A score exists for a game whose kickoff is more than 6h away.",
-      "final-game-with-tied-score": "A game marked Final has equal scores, which is impossible under NFL rules.",
+      "tied-game": "A regular-season game that finished level. This is a LEGAL NFL result \u2014 since 1974 a regular-season game still tied after one overtime period is recorded as a tie, and NFL standings carry a ties column. Recorded for transparency, not because it is an error.",
+      "postseason-game-with-tied-score": "A POSTSEASON game marked Final has equal scores. This one is genuinely impossible: playoff overtime continues until a winner emerges. Treated as a real data error and flagged for review.",
       "result-does-not-match-scores": "The upstream result column disagrees with home_score - away_score.",
       "missing-nfl-gsis-old-game-id": "No NFL GSIS 10-digit id, so the record cannot be tied to an official NFL identifier.",
       "missing-game-id": "No game id at all.",
