@@ -1539,7 +1539,7 @@ def test_data_caveats_are_in_the_manifest_and_the_report():
         "irregularities": {"total": 0, "by_kind": {}, "items": []},
     }
     text = render_report(ctx)
-    assert "4.9 Data caveats" in text
+    assert "6. Data caveats" in text
     assert "A correction" in text and "the detail" in text
     assert "https://www.nfl.com/games/a-at-b-2026-reg-1" in text
 
