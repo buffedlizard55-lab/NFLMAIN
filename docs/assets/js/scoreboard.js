@@ -27,7 +27,7 @@
   /* ------------------------------------------------------------- URL sync */
 
   function readParams() {
-    var p = new URLSearchParams(global.location.search);
+    var p = new URLSearchParams(window.location.search);
     if (p.get("season")) state.season = parseInt(p.get("season"), 10) || null;
     if (p.get("type")) state.type = p.get("type").toUpperCase();
     if (p.get("week")) state.week = parseInt(p.get("week"), 10) || null;
@@ -45,8 +45,8 @@
     if (state.q) p.set("q", state.q);
     if (state.status) p.set("status", state.status);
     var qs = p.toString();
-    var url = global.location.pathname + (qs ? "?" + qs : "");
-    global.history.replaceState(null, "", url);
+    var url = window.location.pathname + (qs ? "?" + qs : "");
+    window.history.replaceState(null, "", url);
   }
 
   /* ---------------------------------------------------------- status bar */

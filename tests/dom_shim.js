@@ -299,9 +299,14 @@ function install(dataDir, pageName) {
 
 function loadScript(file) {
   const src = fs.readFileSync(file, 'utf8');
-  // Scripts run in the shared global scope, exactly as they do in a browser.
+  // Scripts run in the shared global scope, exactly as they do in a browser - except
+  // that Node's global object also provides a binding literally called `global`, which
+  // NO browser provides. Site code that accidentally uses `global.location` (a Node-ism)
+  // used to pass here while throwing ReferenceError in every real browser, leaving the
+  // pages blank. Shadowing it with `undefined` makes the harness faithful: bare
+  // `global.foo` now throws here exactly like it throws in Chrome/Firefox/Safari.
   // eslint-disable-next-line no-new-func
-  new Function(src).call(global);
+  new Function('global', src).call(undefined, undefined);
 }
 
 module.exports = { install, loadScript, Node, TextNode };

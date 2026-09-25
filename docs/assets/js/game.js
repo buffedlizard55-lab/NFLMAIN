@@ -555,7 +555,7 @@
   }
 
   function boot() {
-    var p = new URLSearchParams(global.location.search);
+    var p = new URLSearchParams(window.location.search);
     state.gameId = p.get("id");
     state.season = p.get("season") ? parseInt(p.get("season"), 10) : null;
 

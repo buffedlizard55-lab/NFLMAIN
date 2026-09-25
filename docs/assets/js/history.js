@@ -114,7 +114,7 @@
     if (state.team) p.set("team", state.team);
     if (state.q) p.set("q", state.q);
     var qs = p.toString();
-    global.history.replaceState(null, "", global.location.pathname + (qs ? "?" + qs : ""));
+    window.history.replaceState(null, "", window.location.pathname + (qs ? "?" + qs : ""));
   }
 
   /* ------------------------------------------------------------ standings */
@@ -375,7 +375,7 @@
   }
 
   function boot() {
-    var p = new URLSearchParams(global.location.search);
+    var p = new URLSearchParams(window.location.search);
     if (p.get("season")) state.season = parseInt(p.get("season"), 10) || null;
     if (p.get("type")) state.type = p.get("type").toUpperCase();
     if (p.get("week")) state.week = p.get("week");
