@@ -826,6 +826,35 @@ def test_all_pages_link_to_game_detail_with_the_parameter_it_reads():
         assert "game.html?game=" not in src, f"{name} uses the wrong query parameter"
 
 
+def test_site_javascript_never_references_the_nodejs_only_global_object():
+    """Browsers define `window` and `globalThis`; they do NOT define `global` (Node-only).
+
+    Regression guard for a real outage: scoreboard.js once called `global.location`
+    inside readParams(), which runs first thing in boot(). Every real browser threw
+    ReferenceError at DOMContentLoaded and the page stayed on "Loading feed..." - the
+    site looked completely empty. The frontend smoke test missed it because the harness
+    executed site scripts inside Node's global scope, where `global` exists; the harness
+    now shadows `global` with undefined, and this test is the second, static line of
+    defence that catches the pattern even in code paths no test executes.
+    """
+    import re
+
+    for name in sorted(os.listdir(JS)):
+        if not name.endswith(".js"):
+            continue
+        src = _read(JS, name)
+        if name == "common.js":
+            # common.js legitimately receives `window` as its IIFE's `global` parameter.
+            assert "(function (global)" in src, "common.js IIFE signature changed"
+            assert src.rstrip().endswith("})(window);"), "common.js must bind window"
+            continue
+        for i, line in enumerate(src.splitlines(), 1):
+            assert not re.search(r"\bglobal\b", line), (
+                f"{name}:{i} references `global`, which does not exist in a browser: "
+                f"{line.strip()}"
+            )
+
+
 def test_every_page_ships_its_own_controller_and_no_third_party_runtime():
     """Each HTML page must load common.js plus exactly its controller, all locally."""
     pages = {
