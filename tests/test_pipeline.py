@@ -1634,3 +1634,24 @@ def test_week_of_reads_the_week_out_of_an_official_slug():
     assert D._week_of("/games/49ers-at-cowboys-2026-post-21") == (2026, "POST", 21)
     assert D._week_of("/games/unknown-game") is None
     assert D._week_of(None) is None
+
+
+def test_the_refresh_can_publish_even_if_a_human_pushed_mid_run():
+    """A rejected push must not be the end of the run.
+
+    Observed twice on 2026-09-25: the refresh built the data, verified every link and
+    passed the test suite, then failed at the last step because a human push had moved the
+    branch. The feed stopping because someone edited a README is the wrong reason for the
+    feed to stop.
+    """
+    yaml = pytest.importorskip("yaml")
+    path = os.path.join(REPO_ROOT, ".github", "workflows", "refresh-data.yml")
+    doc = yaml.safe_load(open(path, encoding="utf-8"))
+    body = "\n".join(
+        step.get("run", "") for step in doc["jobs"]["refresh"]["steps"]
+    )
+    assert "git rebase" in body and "for attempt in 1 2 3" in body, \
+        "publishing is not resilient to the branch moving mid-run"
+    assert "git push origin" in body
+    # And it must still fail loudly if it genuinely cannot publish.
+    assert "could not publish after 3 attempts" in body

@@ -76,11 +76,14 @@ static files instead of running Jekyll over it.
   `not_checked_for_budget` with `complete: false`, which the Sources page shows as an
   incomplete audit. After the fix the same audit took **138.8s for 125 requests, 125 ok**.
   Never let a check be able to kill the thing it is checking.
-* **A long refresh can lose the race with a human push.** Run 36172463592 (2026-09-25) came
-  out red at the *Commit and publish* step. Its build and link-audit steps had already
-  passed; the audit simply ran so long that a manual push landed on the branch first, so
-  the bot's commit could not fast-forward. If a refresh run is red at that step, check
-  whether the branch moved underneath it before assuming the data is wrong.
+* **A long refresh can lose the race with a human push.** Run 36172463592 (2026-09-25) and
+  again 36174906146 came out red at the *Commit and publish* step. In both cases the build,
+  the whole link audit and the test suite had already passed - a manual push simply landed
+  on the branch first, so the bot's commit could not fast-forward. **Fixed:** the publish
+  step now rebases onto whatever landed and retries up to three times, and fails loudly
+  with an explicit message if it genuinely cannot publish (a real conflict in the generated
+  data). If a refresh run is still red at that step, check whether the branch moved
+  underneath it before assuming the data is wrong.
 * **Read the artefact, not just the code.** Three of the defects fixed in this session
   (chrome labels parsed as team names, a whole game missed, another week's slate counted as
   this week's) were invisible in the source and obvious in `docs/data/official/`. The
