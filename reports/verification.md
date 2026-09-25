@@ -1,6 +1,6 @@
 # Data verification report
 
-*Generated automatically by `pipeline/build_site_data.py` v1.0.0 at **2026-09-25T16:01:02Z UTC**.*
+*Generated automatically by `pipeline/build_site_data.py` v1.0.0 at **2026-09-25T16:06:12Z UTC**.*
 
 > Do not edit by hand. This file is the audit trail required by `PROJECT_PROMPT.md` rules R3 and R4: every number on the site must trace back to an official source, and every irregularity must be flagged for human review.
 
