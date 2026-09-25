@@ -1,6 +1,6 @@
 # Data verification report
 
-*Generated automatically by `pipeline/build_site_data.py` v1.1.0 at **2026-09-25T17:32:24Z UTC**.*
+*Generated automatically by `pipeline/build_site_data.py` v1.2.0 at **2026-09-25T18:06:26Z UTC**.*
 
 > Do not edit by hand. This file is the audit trail required by `PROJECT_PROMPT.md` rules R3 and R4: every number on the site must trace back to an official source, and every irregularity must be flagged for human review.
 
@@ -102,6 +102,28 @@
 * **Verification evidence:** FLAGGED AS RETIRED 2026-09-25. GET https://www.nfl.com/liveupdate/scorestrip/ss.json did not return JSON; it resolved to the https://www.nfl.com/ homepage. Treat the liveupdate path family as decommissioned. Kept in the registry so nobody re-introduces it.
 * **Licence note:** NFL.
 
+### `nfl-gamebook` - Official NFL Game Book PDF (per game)
+
+* **Publisher:** National Football League
+* **Used URL pattern:** `https://static.www.nfl.com/image/upload/gamecenter/{nfl_api_id}.pdf`
+* **Manual review link:** <https://www.nfl.com/scores/>
+* **Upstream:** NFL (direct)
+* **Tags:** official, play-by-play, verification
+* **Official chain:** Direct from the NFL. This is the league's own game summary document - the same PDF nfl.com links as 'Download Game Book (PDF)' on every Game Center page. It carries the official scoring plays, the official play-by-play narrative, final team statistics, final individual statistics, drive charts, officials and lineups.
+* **Verification evidence:** VERIFIED 2026-09-25 by HTTP GET of the version-less URL https://static.www.nfl.com/image/upload/gamecenter/a9a87603-4feb-11f1-abca-2c54536568a9.pdf - it returned the NFL document titled 'National Football League Game Summary', headed 'NFL Copyright (c) 2026 by The National Football League', for 'Arizona Cardinals at Los Angeles Chargers, Sunday, 9/13/2026, at SoFi Stadium, Inglewood, CA', listing the quarter line AZ 7/6/3/10 = 26 and LAC 7/0/7/0 = 14, the eight official scoring plays, and Final Individual Statistics (ARI: J.Brissett 27/37, 277 yds, 1 TD, 0 INT, 103.1 rtg; LAC: J.Herbert 17/27, 209 yds, 1 TD, 1 INT, 83.7 rtg). Every number matches the record this project publishes for 2026_01_ARI_LAC. The nfl_api_id in the URL is the same UUID the play-by-play feed reports for that game, so the document is keyed by the NFL's own game identifier.
+* **Licence note:** The PDF states it is 'for the express purpose of assisting media in their coverage of the game; any other use of this material is prohibited without the written permission of the National Football League.' This project links to it for verification and does not redistribute its text.
+
+### `nfl-week-page` - Official NFL.com week schedule page (scores as the league publishes them)
+
+* **Publisher:** National Football League
+* **Used URL pattern:** `https://www.nfl.com/schedules/{season}/by-week/{week_slug}`
+* **Manual review link:** <https://www.nfl.com/schedules/>
+* **Upstream:** NFL (direct)
+* **Tags:** official, live, direct-read
+* **Official chain:** Direct from the NFL. Server-rendered by nfl.com itself; each game tile carries the league's own score and status text alongside the canonical /games/ URL.
+* **Verification evidence:** VERIFIED 2026-09-25 by HTTP GET. (a) https://www.nfl.com/schedules/2026/by-week/week-3 returns the official week page; TNF tile 'Falcons 35, Packers 14, FINAL, Thursday, September 24th' linking https://www.nfl.com/games/falcons-at-packers-2026-reg-3, and unplayed tiles in the form 'Chargers at Bills, Sunday, September 27th, 1:00 PM, FOX'. (b) https://www.nfl.com/schedules/2025/by-week/week-18 -> 'NFL Week 18 Schedule 2025'; tiles such as 'Dolphins 10, Patriots 38, FINAL, Sunday, January 4th' and 'Ravens 24, Steelers 26, FINAL, Sunday, January 4th'. (c) Week slugs observed on nfl.com's own pagination links: 'preseason-week-3' (before week-1), 'week-17' -> 'week-18' -> 'wild-card-weekend'. (d) The season selector on the page offers 2010-2026, so pages for older seasons may not exist; the pipeline records that as 'not available' rather than inventing one.
+* **Licence note:** NFL and the NFL shield are registered trademarks of the NFL.
+
 ### `crosscheck-espn` - ESPN public scoreboard (CROSS-CHECK ONLY - not an NFL source)
 
 * **Publisher:** ESPN
@@ -122,7 +144,22 @@
 * Total plays normalised: **5,662**
 * Current season / type / week (inferred, not hardcoded): **2026 REG week 3**
 
-## 4. Official NFL API cross-check
+## 4. Direct read of nfl.com (the league's own site)
+
+**Run.** 2 week page(s) read, 31 game(s) seen, 17 comparable, **17 score(s) matched**, **0 disagreed**, 0 week page(s) unavailable. Read at 2026-09-25T18:06:28Z.
+
+These requests were made by this build, with no credentials, to the league's own website. They are the direct-from-NFL check: what nfl.com published, byte count and digest included, versus what this project publishes.
+
+| Week | nfl.com URL | HTTP | Bytes | SHA-256 (first 16) | Games on page | Parsed by | Result |
+|---|---|---|---|---|---|---|---|
+| 2 | <https://www.nfl.com/schedules/2026/by-week/week-2> | 200 | 2374454 | `5c364420f31b44b4` | 16 | nearby-aria-label=16 | read |
+| 3 | <https://www.nfl.com/schedules/2026/by-week/week-3> | 200 | 2443126 | `20c3edaa6d487786` | 15 | nearby-aria-label=15 | read |
+
+**No difference between nfl.com's own page and this project's published record was found in the weeks read.**
+
+Per-game detail, including every comparison, is written to `docs/data/official/` and rendered on the Sources page.
+
+## 4.2 Official NFL API cross-check
 
 **Not run.** NFL_API_CLIENT_ID / NFL_API_CLIENT_SECRET not set. The NFL does not operate a public developer program; api.nfl.com answers HTTP 401 without a bearer token issued to nfl.com or to a contracted partner. Set these as GitHub Actions secrets to enable direct-league cross-checking.
 
@@ -147,10 +184,11 @@ These requests were made by the pipeline during *this* build. No credentials wer
 
 ## 5. Irregularities flagged for review
 
-**15** finding(s) across **1** kind(s).
+**7291** finding(s) across **2** kind(s).
 
 | Kind | Count | Example game |
 |---|---|---|
+| `missing-nfl-api-id` | 7276 | `1999_20_TB_STL` |
 | `tied-game` | 15 | `2002_10_ATL_PIT` |
 
 ### How to read these
@@ -177,21 +215,207 @@ The kinds below are exactly the ones `normalize.py` emits; this table is kept in
 
 ### Full list (first 200)
 
-* `tied-game` in `2002_10_ATL_PIT` (2002 REG wk 10)
-* `tied-game` in `2008_11_PHI_CIN` (2008 REG wk 11)
-* `tied-game` in `2012_10_STL_SF` (2012 REG wk 10)
-* `tied-game` in `2013_12_MIN_GB` (2013 REG wk 12)
-* `tied-game` in `2014_06_CAR_CIN` (2014 REG wk 6)
-* `tied-game` in `2016_07_SEA_ARI` (2016 REG wk 7)
-* `tied-game` in `2016_08_WAS_CIN` (2016 REG wk 8)
-* `tied-game` in `2018_01_PIT_CLE` (2018 REG wk 1)
-* `tied-game` in `2018_02_MIN_GB` (2018 REG wk 2)
-* `tied-game` in `2019_01_DET_ARI` (2019 REG wk 1)
-* `tied-game` in `2020_03_CIN_PHI` (2020 REG wk 3)
-* `tied-game` in `2021_10_DET_PIT` (2021 REG wk 10)
-* `tied-game` in `2022_01_IND_HOU` (2022 REG wk 1)
-* `tied-game` in `2022_13_WAS_NYG` (2022 REG wk 13)
-* `tied-game` in `2025_04_GB_DAL` (2025 REG wk 4)
+* `missing-nfl-api-id` in `1999_20_TB_STL` (1999 CON wk 20)
+* `missing-nfl-api-id` in `1999_20_TEN_JAX` (1999 CON wk 20)
+* `missing-nfl-api-id` in `1999_19_MIA_JAX` (1999 DIV wk 19)
+* `missing-nfl-api-id` in `1999_19_MIN_STL` (1999 DIV wk 19)
+* `missing-nfl-api-id` in `1999_19_TEN_IND` (1999 DIV wk 19)
+* `missing-nfl-api-id` in `1999_19_WAS_TB` (1999 DIV wk 19)
+* `missing-nfl-api-id` in `1999_01_ARI_PHI` (1999 REG wk 1)
+* `missing-nfl-api-id` in `1999_01_BAL_STL` (1999 REG wk 1)
+* `missing-nfl-api-id` in `1999_01_BUF_IND` (1999 REG wk 1)
+* `missing-nfl-api-id` in `1999_01_CAR_NO` (1999 REG wk 1)
+* `missing-nfl-api-id` in `1999_01_CIN_TEN` (1999 REG wk 1)
+* `missing-nfl-api-id` in `1999_01_DAL_WAS` (1999 REG wk 1)
+* `missing-nfl-api-id` in `1999_01_DET_SEA` (1999 REG wk 1)
+* `missing-nfl-api-id` in `1999_01_KC_CHI` (1999 REG wk 1)
+* `missing-nfl-api-id` in `1999_01_MIA_DEN` (1999 REG wk 1)
+* `missing-nfl-api-id` in `1999_01_MIN_ATL` (1999 REG wk 1)
+* `missing-nfl-api-id` in `1999_01_NE_NYJ` (1999 REG wk 1)
+* `missing-nfl-api-id` in `1999_01_NYG_TB` (1999 REG wk 1)
+* `missing-nfl-api-id` in `1999_01_OAK_GB` (1999 REG wk 1)
+* `missing-nfl-api-id` in `1999_01_PIT_CLE` (1999 REG wk 1)
+* `missing-nfl-api-id` in `1999_01_SF_JAX` (1999 REG wk 1)
+* `missing-nfl-api-id` in `1999_02_ARI_MIA` (1999 REG wk 2)
+* `missing-nfl-api-id` in `1999_02_ATL_DAL` (1999 REG wk 2)
+* `missing-nfl-api-id` in `1999_02_CLE_TEN` (1999 REG wk 2)
+* `missing-nfl-api-id` in `1999_02_DEN_KC` (1999 REG wk 2)
+* `missing-nfl-api-id` in `1999_02_GB_DET` (1999 REG wk 2)
+* `missing-nfl-api-id` in `1999_02_IND_NE` (1999 REG wk 2)
+* `missing-nfl-api-id` in `1999_02_JAX_CAR` (1999 REG wk 2)
+* `missing-nfl-api-id` in `1999_02_NO_SF` (1999 REG wk 2)
+* `missing-nfl-api-id` in `1999_02_NYJ_BUF` (1999 REG wk 2)
+* `missing-nfl-api-id` in `1999_02_OAK_MIN` (1999 REG wk 2)
+* `missing-nfl-api-id` in `1999_02_PIT_BAL` (1999 REG wk 2)
+* `missing-nfl-api-id` in `1999_02_SD_CIN` (1999 REG wk 2)
+* `missing-nfl-api-id` in `1999_02_SEA_CHI` (1999 REG wk 2)
+* `missing-nfl-api-id` in `1999_02_TB_PHI` (1999 REG wk 2)
+* `missing-nfl-api-id` in `1999_02_WAS_NYG` (1999 REG wk 2)
+* `missing-nfl-api-id` in `1999_03_ATL_STL` (1999 REG wk 3)
+* `missing-nfl-api-id` in `1999_03_CHI_OAK` (1999 REG wk 3)
+* `missing-nfl-api-id` in `1999_03_CIN_CAR` (1999 REG wk 3)
+* `missing-nfl-api-id` in `1999_03_CLE_BAL` (1999 REG wk 3)
+* `missing-nfl-api-id` in `1999_03_DEN_TB` (1999 REG wk 3)
+* `missing-nfl-api-id` in `1999_03_DET_KC` (1999 REG wk 3)
+* `missing-nfl-api-id` in `1999_03_IND_SD` (1999 REG wk 3)
+* `missing-nfl-api-id` in `1999_03_MIN_GB` (1999 REG wk 3)
+* `missing-nfl-api-id` in `1999_03_NYG_NE` (1999 REG wk 3)
+* `missing-nfl-api-id` in `1999_03_PHI_BUF` (1999 REG wk 3)
+* `missing-nfl-api-id` in `1999_03_SEA_PIT` (1999 REG wk 3)
+* `missing-nfl-api-id` in `1999_03_SF_ARI` (1999 REG wk 3)
+* `missing-nfl-api-id` in `1999_03_TEN_JAX` (1999 REG wk 3)
+* `missing-nfl-api-id` in `1999_03_WAS_NYJ` (1999 REG wk 3)
+* `missing-nfl-api-id` in `1999_04_ARI_DAL` (1999 REG wk 4)
+* `missing-nfl-api-id` in `1999_04_BAL_ATL` (1999 REG wk 4)
+* `missing-nfl-api-id` in `1999_04_BUF_MIA` (1999 REG wk 4)
+* `missing-nfl-api-id` in `1999_04_CAR_WAS` (1999 REG wk 4)
+* `missing-nfl-api-id` in `1999_04_JAX_PIT` (1999 REG wk 4)
+* `missing-nfl-api-id` in `1999_04_KC_SD` (1999 REG wk 4)
+* `missing-nfl-api-id` in `1999_04_NE_CLE` (1999 REG wk 4)
+* `missing-nfl-api-id` in `1999_04_NO_CHI` (1999 REG wk 4)
+* `missing-nfl-api-id` in `1999_04_NYJ_DEN` (1999 REG wk 4)
+* `missing-nfl-api-id` in `1999_04_OAK_SEA` (1999 REG wk 4)
+* `missing-nfl-api-id` in `1999_04_PHI_NYG` (1999 REG wk 4)
+* `missing-nfl-api-id` in `1999_04_STL_CIN` (1999 REG wk 4)
+* `missing-nfl-api-id` in `1999_04_TB_MIN` (1999 REG wk 4)
+* `missing-nfl-api-id` in `1999_04_TEN_SF` (1999 REG wk 4)
+* `missing-nfl-api-id` in `1999_05_ATL_NO` (1999 REG wk 5)
+* `missing-nfl-api-id` in `1999_05_BAL_TEN` (1999 REG wk 5)
+* `missing-nfl-api-id` in `1999_05_CHI_MIN` (1999 REG wk 5)
+* `missing-nfl-api-id` in `1999_05_CIN_CLE` (1999 REG wk 5)
+* `missing-nfl-api-id` in `1999_05_DAL_PHI` (1999 REG wk 5)
+* `missing-nfl-api-id` in `1999_05_DEN_OAK` (1999 REG wk 5)
+* `missing-nfl-api-id` in `1999_05_JAX_NYJ` (1999 REG wk 5)
+* `missing-nfl-api-id` in `1999_05_MIA_IND` (1999 REG wk 5)
+* `missing-nfl-api-id` in `1999_05_NE_KC` (1999 REG wk 5)
+* `missing-nfl-api-id` in `1999_05_NYG_ARI` (1999 REG wk 5)
+* `missing-nfl-api-id` in `1999_05_PIT_BUF` (1999 REG wk 5)
+* `missing-nfl-api-id` in `1999_05_SD_DET` (1999 REG wk 5)
+* `missing-nfl-api-id` in `1999_05_SF_STL` (1999 REG wk 5)
+* `missing-nfl-api-id` in `1999_05_TB_GB` (1999 REG wk 5)
+* `missing-nfl-api-id` in `1999_06_CAR_SF` (1999 REG wk 6)
+* `missing-nfl-api-id` in `1999_06_CLE_JAX` (1999 REG wk 6)
+* `missing-nfl-api-id` in `1999_06_DAL_NYG` (1999 REG wk 6)
+* `missing-nfl-api-id` in `1999_06_GB_DEN` (1999 REG wk 6)
+* `missing-nfl-api-id` in `1999_06_IND_NYJ` (1999 REG wk 6)
+* `missing-nfl-api-id` in `1999_06_MIA_NE` (1999 REG wk 6)
+* `missing-nfl-api-id` in `1999_06_MIN_DET` (1999 REG wk 6)
+* `missing-nfl-api-id` in `1999_06_OAK_BUF` (1999 REG wk 6)
+* `missing-nfl-api-id` in `1999_06_PHI_CHI` (1999 REG wk 6)
+* `missing-nfl-api-id` in `1999_06_PIT_CIN` (1999 REG wk 6)
+* `missing-nfl-api-id` in `1999_06_SEA_SD` (1999 REG wk 6)
+* `missing-nfl-api-id` in `1999_06_STL_ATL` (1999 REG wk 6)
+* `missing-nfl-api-id` in `1999_06_TEN_NO` (1999 REG wk 6)
+* `missing-nfl-api-id` in `1999_06_WAS_ARI` (1999 REG wk 6)
+* `missing-nfl-api-id` in `1999_07_ATL_PIT` (1999 REG wk 7)
+* `missing-nfl-api-id` in `1999_07_BUF_SEA` (1999 REG wk 7)
+* `missing-nfl-api-id` in `1999_07_CHI_TB` (1999 REG wk 7)
+* `missing-nfl-api-id` in `1999_07_CIN_IND` (1999 REG wk 7)
+* `missing-nfl-api-id` in `1999_07_CLE_STL` (1999 REG wk 7)
+* `missing-nfl-api-id` in `1999_07_DEN_NE` (1999 REG wk 7)
+* `missing-nfl-api-id` in `1999_07_DET_CAR` (1999 REG wk 7)
+* `missing-nfl-api-id` in `1999_07_GB_SD` (1999 REG wk 7)
+* `missing-nfl-api-id` in `1999_07_KC_BAL` (1999 REG wk 7)
+* `missing-nfl-api-id` in `1999_07_NO_NYG` (1999 REG wk 7)
+* `missing-nfl-api-id` in `1999_07_NYJ_OAK` (1999 REG wk 7)
+* `missing-nfl-api-id` in `1999_07_PHI_MIA` (1999 REG wk 7)
+* `missing-nfl-api-id` in `1999_07_SF_MIN` (1999 REG wk 7)
+* `missing-nfl-api-id` in `1999_07_WAS_DAL` (1999 REG wk 7)
+* `missing-nfl-api-id` in `1999_08_BUF_BAL` (1999 REG wk 8)
+* `missing-nfl-api-id` in `1999_08_CAR_ATL` (1999 REG wk 8)
+* `missing-nfl-api-id` in `1999_08_CHI_WAS` (1999 REG wk 8)
+* `missing-nfl-api-id` in `1999_08_CLE_NO` (1999 REG wk 8)
+* `missing-nfl-api-id` in `1999_08_DAL_IND` (1999 REG wk 8)
+* `missing-nfl-api-id` in `1999_08_JAX_CIN` (1999 REG wk 8)
+* `missing-nfl-api-id` in `1999_08_MIA_OAK` (1999 REG wk 8)
+* `missing-nfl-api-id` in `1999_08_MIN_DEN` (1999 REG wk 8)
+* `missing-nfl-api-id` in `1999_08_NE_ARI` (1999 REG wk 8)
+* `missing-nfl-api-id` in `1999_08_NYG_PHI` (1999 REG wk 8)
+* `missing-nfl-api-id` in `1999_08_SD_KC` (1999 REG wk 8)
+* `missing-nfl-api-id` in `1999_08_SEA_GB` (1999 REG wk 8)
+* `missing-nfl-api-id` in `1999_08_STL_TEN` (1999 REG wk 8)
+* `missing-nfl-api-id` in `1999_08_TB_DET` (1999 REG wk 8)
+* `missing-nfl-api-id` in `1999_09_ARI_NYJ` (1999 REG wk 9)
+* `missing-nfl-api-id` in `1999_09_BAL_CLE` (1999 REG wk 9)
+* `missing-nfl-api-id` in `1999_09_BUF_WAS` (1999 REG wk 9)
+* `missing-nfl-api-id` in `1999_09_CHI_GB` (1999 REG wk 9)
+* `missing-nfl-api-id` in `1999_09_CIN_SEA` (1999 REG wk 9)
+* `missing-nfl-api-id` in `1999_09_DAL_MIN` (1999 REG wk 9)
+* `missing-nfl-api-id` in `1999_09_DEN_SD` (1999 REG wk 9)
+* `missing-nfl-api-id` in `1999_09_JAX_ATL` (1999 REG wk 9)
+* `missing-nfl-api-id` in `1999_09_KC_IND` (1999 REG wk 9)
+* `missing-nfl-api-id` in `1999_09_PHI_CAR` (1999 REG wk 9)
+* `missing-nfl-api-id` in `1999_09_PIT_SF` (1999 REG wk 9)
+* `missing-nfl-api-id` in `1999_09_STL_DET` (1999 REG wk 9)
+* `missing-nfl-api-id` in `1999_09_TB_NO` (1999 REG wk 9)
+* `missing-nfl-api-id` in `1999_09_TEN_MIA` (1999 REG wk 9)
+* `missing-nfl-api-id` in `1999_10_BAL_JAX` (1999 REG wk 10)
+* `missing-nfl-api-id` in `1999_10_CAR_STL` (1999 REG wk 10)
+* `missing-nfl-api-id` in `1999_10_CLE_PIT` (1999 REG wk 10)
+* `missing-nfl-api-id` in `1999_10_DEN_SEA` (1999 REG wk 10)
+* `missing-nfl-api-id` in `1999_10_DET_ARI` (1999 REG wk 10)
+* `missing-nfl-api-id` in `1999_10_GB_DAL` (1999 REG wk 10)
+* `missing-nfl-api-id` in `1999_10_IND_NYG` (1999 REG wk 10)
+* `missing-nfl-api-id` in `1999_10_KC_TB` (1999 REG wk 10)
+* `missing-nfl-api-id` in `1999_10_MIA_BUF` (1999 REG wk 10)
+* `missing-nfl-api-id` in `1999_10_MIN_CHI` (1999 REG wk 10)
+* `missing-nfl-api-id` in `1999_10_NYJ_NE` (1999 REG wk 10)
+* `missing-nfl-api-id` in `1999_10_SD_OAK` (1999 REG wk 10)
+* `missing-nfl-api-id` in `1999_10_SF_NO` (1999 REG wk 10)
+* `missing-nfl-api-id` in `1999_10_TEN_CIN` (1999 REG wk 10)
+* `missing-nfl-api-id` in `1999_10_WAS_PHI` (1999 REG wk 10)
+* `missing-nfl-api-id` in `1999_11_ATL_TB` (1999 REG wk 11)
+* `missing-nfl-api-id` in `1999_11_BAL_CIN` (1999 REG wk 11)
+* `missing-nfl-api-id` in `1999_11_BUF_NYJ` (1999 REG wk 11)
+* `missing-nfl-api-id` in `1999_11_CAR_CLE` (1999 REG wk 11)
+* `missing-nfl-api-id` in `1999_11_CHI_SD` (1999 REG wk 11)
+* `missing-nfl-api-id` in `1999_11_DAL_ARI` (1999 REG wk 11)
+* `missing-nfl-api-id` in `1999_11_DET_GB` (1999 REG wk 11)
+* `missing-nfl-api-id` in `1999_11_IND_PHI` (1999 REG wk 11)
+* `missing-nfl-api-id` in `1999_11_NE_MIA` (1999 REG wk 11)
+* `missing-nfl-api-id` in `1999_11_NO_JAX` (1999 REG wk 11)
+* `missing-nfl-api-id` in `1999_11_NYG_WAS` (1999 REG wk 11)
+* `missing-nfl-api-id` in `1999_11_OAK_DEN` (1999 REG wk 11)
+* `missing-nfl-api-id` in `1999_11_PIT_TEN` (1999 REG wk 11)
+* `missing-nfl-api-id` in `1999_11_SEA_KC` (1999 REG wk 11)
+* `missing-nfl-api-id` in `1999_11_STL_SF` (1999 REG wk 11)
+* `missing-nfl-api-id` in `1999_12_ARI_NYG` (1999 REG wk 12)
+* `missing-nfl-api-id` in `1999_12_ATL_CAR` (1999 REG wk 12)
+* `missing-nfl-api-id` in `1999_12_CHI_DET` (1999 REG wk 12)
+* `missing-nfl-api-id` in `1999_12_CIN_PIT` (1999 REG wk 12)
+* `missing-nfl-api-id` in `1999_12_GB_SF` (1999 REG wk 12)
+* `missing-nfl-api-id` in `1999_12_JAX_BAL` (1999 REG wk 12)
+* `missing-nfl-api-id` in `1999_12_KC_OAK` (1999 REG wk 12)
+* `missing-nfl-api-id` in `1999_12_MIA_DAL` (1999 REG wk 12)
+* `missing-nfl-api-id` in `1999_12_NE_BUF` (1999 REG wk 12)
+* `missing-nfl-api-id` in `1999_12_NO_STL` (1999 REG wk 12)
+* `missing-nfl-api-id` in `1999_12_NYJ_IND` (1999 REG wk 12)
+* `missing-nfl-api-id` in `1999_12_PHI_WAS` (1999 REG wk 12)
+* `missing-nfl-api-id` in `1999_12_SD_MIN` (1999 REG wk 12)
+* `missing-nfl-api-id` in `1999_12_TB_SEA` (1999 REG wk 12)
+* `missing-nfl-api-id` in `1999_12_TEN_CLE` (1999 REG wk 12)
+* `missing-nfl-api-id` in `1999_13_CLE_SD` (1999 REG wk 13)
+* `missing-nfl-api-id` in `1999_13_DAL_NE` (1999 REG wk 13)
+* `missing-nfl-api-id` in `1999_13_GB_CHI` (1999 REG wk 13)
+* `missing-nfl-api-id` in `1999_13_IND_MIA` (1999 REG wk 13)
+* `missing-nfl-api-id` in `1999_13_KC_DEN` (1999 REG wk 13)
+* `missing-nfl-api-id` in `1999_13_MIN_TB` (1999 REG wk 13)
+* `missing-nfl-api-id` in `1999_13_NO_ATL` (1999 REG wk 13)
+* `missing-nfl-api-id` in `1999_13_NYJ_NYG` (1999 REG wk 13)
+* `missing-nfl-api-id` in `1999_13_PHI_ARI` (1999 REG wk 13)
+* `missing-nfl-api-id` in `1999_13_PIT_JAX` (1999 REG wk 13)
+* `missing-nfl-api-id` in `1999_13_SEA_OAK` (1999 REG wk 13)
+* `missing-nfl-api-id` in `1999_13_SF_CIN` (1999 REG wk 13)
+* `missing-nfl-api-id` in `1999_13_STL_CAR` (1999 REG wk 13)
+* `missing-nfl-api-id` in `1999_13_TEN_BAL` (1999 REG wk 13)
+* `missing-nfl-api-id` in `1999_13_WAS_DET` (1999 REG wk 13)
+* `missing-nfl-api-id` in `1999_14_ARI_WAS` (1999 REG wk 14)
+* `missing-nfl-api-id` in `1999_14_ATL_SF` (1999 REG wk 14)
+* `missing-nfl-api-id` in `1999_14_BAL_PIT` (1999 REG wk 14)
+* `missing-nfl-api-id` in `1999_14_CAR_GB` (1999 REG wk 14)
+* `missing-nfl-api-id` in `1999_14_CLE_CIN` (1999 REG wk 14)
+* `missing-nfl-api-id` in `1999_14_DEN_JAX` (1999 REG wk 14)
+* ...and 7091 more (see `docs/data/manifest.json`).
 
 ## 6. Manual review links
 
