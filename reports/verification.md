@@ -1,6 +1,6 @@
 # Data verification report
 
-*Generated automatically by `pipeline/build_site_data.py` v1.2.0 at **2026-09-26T01:44:05Z UTC**.*
+*Generated automatically by `pipeline/build_site_data.py` v1.2.0 at **2026-09-26T14:36:27Z UTC**.*
 
 > Do not edit by hand. This file is the audit trail required by `PROJECT_PROMPT.md` rules R3 and R4: every number on the site must trace back to an official source, and every irregularity must be flagged for human review.
 
@@ -9,7 +9,7 @@
 | Upstream URL | Mode | HTTP | Bytes | SHA-256 (first 16) |
 |---|---|---|---|---|
 | `https://github.com/nflverse/nflverse-data/releases/download/teams/teams_colors_logos.csv` | network | 200 | 18,919 | `4eab559fcf89cb4e` |
-| `https://github.com/nflverse/nflverse-data/releases/download/schedules/games.csv` | network | 200 | 2,180,907 | `05b15594e7ead426` |
+| `https://github.com/nflverse/nflverse-data/releases/download/schedules/games.csv` | network | 200 | 2,180,907 | `131f22a980b0d7c5` |
 | `https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2026.csv.gz` | network | 200 | 2,216,307 | `fba617ba87b0cc7c` |
 
 ## 2. Source registry and provenance
@@ -146,14 +146,14 @@
 
 ## 4. Direct read of nfl.com (the league's own site)
 
-**Run.** 2 week page(s) read, 32 game(s) seen, 17 comparable (15 listed but not yet played), **17 score(s) matched**, **0 disagreed**, 0 week page(s) unavailable, 0 game(s) listed by nfl.com that this build has no record of, 0 club name(s) nfl.com printed that this project does not recognise. Read at 2026-09-26T01:44:07Z.
+**Run.** 2 week page(s) read, 32 game(s) seen, 17 comparable (15 listed but not yet played), **17 score(s) matched**, **0 disagreed**, 0 week page(s) unavailable, 0 game(s) listed by nfl.com that this build has no record of, 0 club name(s) nfl.com printed that this project does not recognise. Read at 2026-09-26T14:36:29Z.
 
 These requests were made by this build, with no credentials, to the league's own website. They are the direct-from-NFL check: what nfl.com published, byte count and digest included, versus what this project publishes.
 
 | Week | nfl.com URL | HTTP | Bytes | SHA-256 (first 16) | Games on page | Parsed by | Result |
 |---|---|---|---|---|---|---|---|
-| 2 | <https://www.nfl.com/schedules/2026/by-week/week-2> | 200 | 2404142 | `df5537a3324f8f58` | 16 | aria-label=16 | read |
-| 3 | <https://www.nfl.com/schedules/2026/by-week/week-3> | 200 | 2472791 | `f02b4333b561f54d` | 16 | aria-label=16 | read |
+| 2 | <https://www.nfl.com/schedules/2026/by-week/week-2> | 200 | 2400440 | `616f8becddb8fa83` | 16 | aria-label=16 | read |
+| 3 | <https://www.nfl.com/schedules/2026/by-week/week-3> | 200 | 2468997 | `c66bacb302b10cc1` | 16 | aria-label=16 | read |
 
 **No difference between nfl.com's own page and this project's published record was found in the weeks read.**
 
