@@ -1,6 +1,6 @@
 # Data verification report
 
-*Generated automatically by `pipeline/build_site_data.py` v1.2.0 at **2026-10-11T16:22:43Z UTC**.*
+*Generated automatically by `pipeline/build_site_data.py` v1.2.0 at **2026-10-11T17:27:06Z UTC**.*
 
 > Do not edit by hand. This file is the audit trail required by `PROJECT_PROMPT.md` rules R3 and R4: every number on the site must trace back to an official source, and every irregularity must be flagged for human review.
 
@@ -9,7 +9,7 @@
 | Upstream URL | Mode | HTTP | Bytes | SHA-256 (first 16) |
 |---|---|---|---|---|
 | `https://github.com/nflverse/nflverse-data/releases/download/teams/teams_colors_logos.csv` | network | 200 | 18,919 | `4eab559fcf89cb4e` |
-| `https://github.com/nflverse/nflverse-data/releases/download/schedules/games.csv` | network | 200 | 2,184,001 | `5a048027990423ad` |
+| `https://github.com/nflverse/nflverse-data/releases/download/schedules/games.csv` | network | 200 | 2,183,888 | `c19dc0b8e5b9628e` |
 | `https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2026.csv.gz` | network | 200 | 4,448,255 | `e7c162e793cb0f82` |
 
 ## 2. Source registry and provenance
@@ -146,16 +146,20 @@
 
 ## 4. Direct read of nfl.com (the league's own site)
 
-**Run.** 2 week page(s) read, 31 game(s) seen, 17 comparable (13 listed but not yet played), **17 score(s) matched**, **0 disagreed**, 0 week page(s) unavailable, 0 game(s) listed by nfl.com that this build has no record of, 0 club name(s) nfl.com printed that this project does not recognise. Read at 2026-10-11T16:22:45Z.
+**Run.** 2 week page(s) read, 31 game(s) seen, 18 comparable (5 listed but not yet played), **18 score(s) matched**, **0 disagreed**, 0 week page(s) unavailable, 0 game(s) listed by nfl.com that this build has no record of, 0 club name(s) nfl.com printed that this project does not recognise. Read at 2026-10-11T17:27:09Z.
 
 These requests were made by this build, with no credentials, to the league's own website. They are the direct-from-NFL check: what nfl.com published, byte count and digest included, versus what this project publishes.
 
 | Week | nfl.com URL | HTTP | Bytes | SHA-256 (first 16) | Games on page | Parsed by | Result |
 |---|---|---|---|---|---|---|---|
-| 4 | <https://www.nfl.com/schedules/2026/by-week/week-4> | 200 | 2354954 | `3c279b22aa02e53a` | 16 | aria-label=16 | read |
-| 5 | <https://www.nfl.com/schedules/2026/by-week/week-5> | 200 | 2411200 | `91459da870de3ddd` | 15 | aria-label=15 | read |
+| 4 | <https://www.nfl.com/schedules/2026/by-week/week-4> | 200 | 2352740 | `92f4bb14254f3621` | 16 | aria-label=16 | read |
+| 5 | <https://www.nfl.com/schedules/2026/by-week/week-5> | 200 | 2360086 | `6fe1cbf49eb878c8` | 15 | aria-label=15 | read |
 
-**No difference between nfl.com's own page and this project's published record was found in the weeks read.**
+**1** difference(s) between nfl.com and this project's published record are listed below.
+
+| Week | Kind | Game | ours | nfl.com | Detail |
+|---|---|---|---|---|---|
+| 5 | `status-official-final` | 2026_05_PHI_JAX | IN_PROGRESS | FINAL | nfl.com says the game is over while our estimate still had it in progress; the official status wins ([nfl.com](https://www.nfl.com/games/eagles-at-jaguars-2026-reg-5)) |
 
 Per-game detail, including every comparison, is written to `docs/data/official/` and rendered on the Sources page.
 
@@ -203,11 +207,12 @@ Effect on the site: `ids.nfl_api_id` is filled only from the play-by-play feed. 
 
 ## 7. Irregularities flagged for review
 
-**15** finding(s) across **1** kind(s).
+**16** finding(s) across **2** kind(s).
 
 | Kind | Count | Example game |
 |---|---|---|
 | `tied-game` | 15 | `2002_10_ATL_PIT` |
+| `status-taken-from-nfl-com` | 1 | `2026_05_PHI_JAX` |
 
 ### How to read these
 
@@ -254,6 +259,7 @@ The kinds below are exactly the ones `normalize.py` emits; this table is kept in
 * `tied-game` in `2022_01_IND_HOU` (2022 REG wk 1)
 * `tied-game` in `2022_13_WAS_NYG` (2022 REG wk 13)
 * `tied-game` in `2025_04_GB_DAL` (2025 REG wk 4)
+* `status-taken-from-nfl-com` in `2026_05_PHI_JAX` (2026 REG wk 5)
 
 ## 8. Manual review links
 
