@@ -1,6 +1,6 @@
 # Data verification report
 
-*Generated automatically by `pipeline/build_site_data.py` v1.2.0 at **2026-10-11T21:02:37Z UTC**.*
+*Generated automatically by `pipeline/build_site_data.py` v1.2.0 at **2026-10-12T00:32:51Z UTC**.*
 
 > Do not edit by hand. This file is the audit trail required by `PROJECT_PROMPT.md` rules R3 and R4: every number on the site must trace back to an official source, and every irregularity must be flagged for human review.
 
@@ -9,8 +9,8 @@
 | Upstream URL | Mode | HTTP | Bytes | SHA-256 (first 16) |
 |---|---|---|---|---|
 | `https://github.com/nflverse/nflverse-data/releases/download/teams/teams_colors_logos.csv` | network | 200 | 18,919 | `4eab559fcf89cb4e` |
-| `https://github.com/nflverse/nflverse-data/releases/download/schedules/games.csv` | network | 200 | 2,183,610 | `63cd0cd9a743a832` |
-| `https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2026.csv.gz` | network | 200 | 4,448,255 | `e7c162e793cb0f82` |
+| `https://github.com/nflverse/nflverse-data/releases/download/schedules/games.csv` | network | 200 | 2,184,058 | `03e7dd01c14f72bf` |
+| `https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2026.csv.gz` | network | 200 | 5,282,700 | `b8f4cc62254384c9` |
 
 ## 2. Source registry and provenance
 
@@ -140,32 +140,28 @@
 * Seasons in scoreboard index: **28** (1999-2026)
 * Total games: **7,548**
 * Seasons with play-by-play written: **1**
-* Games with play-by-play written: **65**
-* Total plays normalised: **11,327**
+* Games with play-by-play written: **77**
+* Total plays normalised: **13,449**
 * Current season / type / week (inferred, not hardcoded): **2026 REG week 5**
 
 ## 4. Direct read of nfl.com (the league's own site)
 
-**Run.** 2 week page(s) read, 31 game(s) seen, 25 comparable (2 listed but not yet played), **25 score(s) matched**, **0 disagreed**, 0 week page(s) unavailable, 0 game(s) listed by nfl.com that this build has no record of, 0 club name(s) nfl.com printed that this project does not recognise. Read at 2026-10-11T21:02:40Z.
+**Run.** 2 week page(s) read, 31 game(s) seen, 29 comparable (1 listed but not yet played), **29 score(s) matched**, **0 disagreed**, 0 week page(s) unavailable, 0 game(s) listed by nfl.com that this build has no record of, 0 club name(s) nfl.com printed that this project does not recognise. Read at 2026-10-12T00:32:54Z.
 
 These requests were made by this build, with no credentials, to the league's own website. They are the direct-from-NFL check: what nfl.com published, byte count and digest included, versus what this project publishes.
 
 | Week | nfl.com URL | HTTP | Bytes | SHA-256 (first 16) | Games on page | Parsed by | Result |
 |---|---|---|---|---|---|---|---|
-| 4 | <https://www.nfl.com/schedules/2026/by-week/week-4> | 200 | 2351200 | `295fd6193a227d10` | 16 | aria-label=16 | read |
-| 5 | <https://www.nfl.com/schedules/2026/by-week/week-5> | 200 | 2345478 | `b6b9992a66db7515` | 15 | aria-label=15 | read |
+| 4 | <https://www.nfl.com/schedules/2026/by-week/week-4> | 200 | 2350738 | `8416b1e0476b3f09` | 16 | aria-label=16 | read |
+| 5 | <https://www.nfl.com/schedules/2026/by-week/week-5> | 200 | 2340140 | `110be6dbdb6eed0d` | 15 | aria-label=15 | read |
 
-**7** difference(s) between nfl.com and this project's published record are listed below.
+**3** difference(s) between nfl.com and this project's published record are listed below.
 
 | Week | Kind | Game | ours | nfl.com | Detail |
 |---|---|---|---|---|---|
-| 5 | `status-official-final` | 2026_05_CIN_MIA | IN_PROGRESS | FINAL | nfl.com says the game is over while our estimate still had it in progress; the official status wins ([nfl.com](https://www.nfl.com/games/bengals-at-dolphins-2026-reg-5)) |
-| 5 | `status-official-final` | 2026_05_LV_NE | IN_PROGRESS | FINAL | nfl.com says the game is over while our estimate still had it in progress; the official status wins ([nfl.com](https://www.nfl.com/games/raiders-at-patriots-2026-reg-5)) |
-| 5 | `status-official-final` | 2026_05_MIN_NO | IN_PROGRESS | FINAL | nfl.com says the game is over while our estimate still had it in progress; the official status wins ([nfl.com](https://www.nfl.com/games/vikings-at-saints-2026-reg-5)) |
-| 5 | `status-official-final` | 2026_05_CLE_NYJ | IN_PROGRESS | FINAL | nfl.com says the game is over while our estimate still had it in progress; the official status wins ([nfl.com](https://www.nfl.com/games/browns-at-jets-2026-reg-5)) |
-| 5 | `status-official-final` | 2026_05_IND_PIT | IN_PROGRESS | FINAL | nfl.com says the game is over while our estimate still had it in progress; the official status wins ([nfl.com](https://www.nfl.com/games/colts-at-steelers-2026-reg-5)) |
-| 5 | `status-official-final` | 2026_05_HOU_TEN | IN_PROGRESS | FINAL | nfl.com says the game is over while our estimate still had it in progress; the official status wins ([nfl.com](https://www.nfl.com/games/texans-at-titans-2026-reg-5)) |
-| 5 | `status-official-final` | 2026_05_CHI_GB | IN_PROGRESS | FINAL | nfl.com says the game is over while our estimate still had it in progress; the official status wins ([nfl.com](https://www.nfl.com/games/bears-at-packers-2026-reg-5)) |
+| 5 | `status-official-final` | 2026_05_DEN_LAC | IN_PROGRESS | FINAL | nfl.com says the game is over while our estimate still had it in progress; the official status wins ([nfl.com](https://www.nfl.com/games/broncos-at-chargers-2026-reg-5)) |
+| 5 | `status-official-final` | 2026_05_DET_ARI | IN_PROGRESS | FINAL | nfl.com says the game is over while our estimate still had it in progress; the official status wins ([nfl.com](https://www.nfl.com/games/lions-at-cardinals-2026-reg-5)) |
+| 5 | `status-official-final` | 2026_05_SF_SEA | IN_PROGRESS | FINAL | nfl.com says the game is over while our estimate still had it in progress; the official status wins ([nfl.com](https://www.nfl.com/games/49ers-at-seahawks-2026-reg-5)) |
 
 Per-game detail, including every comparison, is written to `docs/data/official/` and rendered on the Sources page.
 
@@ -204,8 +200,8 @@ The two feeds carry different identifier families and must not be used interchan
 |---|---|
 | `games_in_archive` | 7,548 |
 | `games_carrying_a_detail_id` | 272 |
-| `games_with_a_trusted_nfl_api_uuid` | 65 |
-| `games_with_an_official_gamebook_link` | 65 |
+| `games_with_a_trusted_nfl_api_uuid` | 77 |
+| `games_with_an_official_gamebook_link` | 77 |
 
 Evidence: <https://www.nfl.com/games/cowboys-at-buccaneers-2021-reg-1> · <https://www.nfl.com/games/jaguars-at-texans-2021-reg-1> · <https://www.nfl.com/games/cardinals-at-chargers-2026-reg-1>
 
@@ -213,12 +209,12 @@ Effect on the site: `ids.nfl_api_id` is filled only from the play-by-play feed. 
 
 ## 7. Irregularities flagged for review
 
-**22** finding(s) across **2** kind(s).
+**19** finding(s) across **2** kind(s).
 
 | Kind | Count | Example game |
 |---|---|---|
-| `tied-game` | 15 | `2002_10_ATL_PIT` |
-| `status-taken-from-nfl-com` | 7 | `2026_05_CHI_GB` |
+| `tied-game` | 16 | `2002_10_ATL_PIT` |
+| `status-taken-from-nfl-com` | 3 | `2026_05_DEN_LAC` |
 
 ### How to read these
 
@@ -265,13 +261,10 @@ The kinds below are exactly the ones `normalize.py` emits; this table is kept in
 * `tied-game` in `2022_01_IND_HOU` (2022 REG wk 1)
 * `tied-game` in `2022_13_WAS_NYG` (2022 REG wk 13)
 * `tied-game` in `2025_04_GB_DAL` (2025 REG wk 4)
-* `status-taken-from-nfl-com` in `2026_05_CHI_GB` (2026 REG wk 5)
-* `status-taken-from-nfl-com` in `2026_05_CIN_MIA` (2026 REG wk 5)
-* `status-taken-from-nfl-com` in `2026_05_CLE_NYJ` (2026 REG wk 5)
-* `status-taken-from-nfl-com` in `2026_05_HOU_TEN` (2026 REG wk 5)
-* `status-taken-from-nfl-com` in `2026_05_IND_PIT` (2026 REG wk 5)
-* `status-taken-from-nfl-com` in `2026_05_LV_NE` (2026 REG wk 5)
-* `status-taken-from-nfl-com` in `2026_05_MIN_NO` (2026 REG wk 5)
+* `tied-game` in `2026_05_NYG_WAS` (2026 REG wk 5)
+* `status-taken-from-nfl-com` in `2026_05_DEN_LAC` (2026 REG wk 5)
+* `status-taken-from-nfl-com` in `2026_05_DET_ARI` (2026 REG wk 5)
+* `status-taken-from-nfl-com` in `2026_05_SF_SEA` (2026 REG wk 5)
 
 ## 8. Manual review links
 
