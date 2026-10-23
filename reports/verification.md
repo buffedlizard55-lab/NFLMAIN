@@ -1,6 +1,6 @@
 # Data verification report
 
-*Generated automatically by `pipeline/build_site_data.py` v1.2.0 at **2026-10-22T23:28:36Z UTC**.*
+*Generated automatically by `pipeline/build_site_data.py` v1.2.0 at **2026-10-23T01:44:01Z UTC**.*
 
 > Do not edit by hand. This file is the audit trail required by `PROJECT_PROMPT.md` rules R3 and R4: every number on the site must trace back to an official source, and every irregularity must be flagged for human review.
 
@@ -9,7 +9,7 @@
 | Upstream URL | Mode | HTTP | Bytes | SHA-256 (first 16) |
 |---|---|---|---|---|
 | `https://github.com/nflverse/nflverse-data/releases/download/teams/teams_colors_logos.csv` | network | 200 | 18,919 | `4eab559fcf89cb4e` |
-| `https://github.com/nflverse/nflverse-data/releases/download/schedules/games.csv` | network | 200 | 2,186,334 | `a677e4a0ed6aacad` |
+| `https://github.com/nflverse/nflverse-data/releases/download/schedules/games.csv` | network | 200 | 2,186,345 | `79f4ffecaf6e33e1` |
 | `https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2026.csv.gz` | network | 200 | 6,436,940 | `a6ddee607edda2d5` |
 
 ## 2. Source registry and provenance
@@ -142,18 +142,18 @@
 * Seasons with play-by-play written: **1**
 * Games with play-by-play written: **93**
 * Total plays normalised: **16,380**
-* Current season / type / week (inferred, not hardcoded): **2026 REG week 6**
+* Current season / type / week (inferred, not hardcoded): **2026 REG week 7**
 
 ## 4. Direct read of nfl.com (the league's own site)
 
-**Run.** 2 week page(s) read, 29 game(s) seen, 29 comparable (0 listed but not yet played), **29 score(s) matched**, **0 disagreed**, 0 week page(s) unavailable, 0 game(s) listed by nfl.com that this build has no record of, 0 club name(s) nfl.com printed that this project does not recognise. Read at 2026-10-22T23:28:39Z.
+**Run.** 2 week page(s) read, 28 game(s) seen, 14 comparable (13 listed but not yet played), **14 score(s) matched**, **0 disagreed**, 0 week page(s) unavailable, 0 game(s) listed by nfl.com that this build has no record of, 0 club name(s) nfl.com printed that this project does not recognise. Read at 2026-10-23T01:44:04Z.
 
 These requests were made by this build, with no credentials, to the league's own website. They are the direct-from-NFL check: what nfl.com published, byte count and digest included, versus what this project publishes.
 
 | Week | nfl.com URL | HTTP | Bytes | SHA-256 (first 16) | Games on page | Parsed by | Result |
 |---|---|---|---|---|---|---|---|
-| 5 | <https://www.nfl.com/schedules/2026/by-week/week-5> | 200 | 2352311 | `4a93870f7eb66b4a` | 15 | aria-label=15 | read |
-| 6 | <https://www.nfl.com/schedules/2026/by-week/week-6> | 200 | 2337148 | `5a66976d463ff8ec` | 14 | aria-label=14 | read |
+| 6 | <https://www.nfl.com/schedules/2026/by-week/week-6> | 200 | 2335103 | `f10c3d25c495ae50` | 14 | aria-label=14 | read |
+| 7 | <https://www.nfl.com/schedules/2026/by-week/week-7> | 200 | 2386294 | `067fac4af42701d9` | 14 | aria-label=14 | read |
 
 **No difference between nfl.com's own page and this project's published record was found in the weeks read.**
 
@@ -172,7 +172,7 @@ These requests were made by the pipeline during *this* build. No credentials wer
 
 | Endpoint | Method | Observed | Conclusion drawn |
 |---|---|---|---|
-| `https://api.nfl.com/football/v2/games?season=2026&week=6&seasonType=REG` | GET | HTTP 401 | 401: exists and is reachable, but requires a bearer token the NFL issues. |
+| `https://api.nfl.com/football/v2/games?season=2026&week=7&seasonType=REG` | GET | HTTP 401 | 401: exists and is reachable, but requires a bearer token the NFL issues. |
 | `https://api.nfl.com/experience/v2/schedules` | GET | HTTP 401 | 401: exists and is reachable, but requires a bearer token the NFL issues. |
 | `https://api.nfl.com/identity/v1/token/client` | GET | HTTP 405 | Endpoint exists; this HTTP method is refused (POST-only token endpoint). |
 | `https://api.nfl.com/identity/v1/token/client` | POST | HTTP 400 | 400: endpoint responded and rejected the request (expected without credentials). |
