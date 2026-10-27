@@ -1,6 +1,6 @@
 # Data verification report
 
-*Generated automatically by `pipeline/build_site_data.py` v1.2.0 at **2026-10-27T00:38:57Z UTC**.*
+*Generated automatically by `pipeline/build_site_data.py` v1.2.0 at **2026-10-27T01:51:01Z UTC**.*
 
 > Do not edit by hand. This file is the audit trail required by `PROJECT_PROMPT.md` rules R3 and R4: every number on the site must trace back to an official source, and every irregularity must be flagged for human review.
 
@@ -146,14 +146,14 @@
 
 ## 4. Direct read of nfl.com (the league's own site)
 
-**Run.** 2 week page(s) read, 28 game(s) seen, 27 comparable (0 listed but not yet played), **27 score(s) matched**, **0 disagreed**, 0 week page(s) unavailable, 0 game(s) listed by nfl.com that this build has no record of, 0 club name(s) nfl.com printed that this project does not recognise. Read at 2026-10-27T00:38:59Z.
+**Run.** 2 week page(s) read, 28 game(s) seen, 27 comparable (0 listed but not yet played), **27 score(s) matched**, **0 disagreed**, 0 week page(s) unavailable, 0 game(s) listed by nfl.com that this build has no record of, 0 club name(s) nfl.com printed that this project does not recognise. Read at 2026-10-27T01:51:05Z.
 
 These requests were made by this build, with no credentials, to the league's own website. They are the direct-from-NFL check: what nfl.com published, byte count and digest included, versus what this project publishes.
 
 | Week | nfl.com URL | HTTP | Bytes | SHA-256 (first 16) | Games on page | Parsed by | Result |
 |---|---|---|---|---|---|---|---|
-| 6 | <https://www.nfl.com/schedules/2026/by-week/week-6> | 200 | 2344510 | `c2720a0561dd0622` | 14 | aria-label=14 | read |
-| 7 | <https://www.nfl.com/schedules/2026/by-week/week-7> | 200 | 2343965 | `0896e22c5fed83df` | 14 | aria-label=14 | read |
+| 6 | <https://www.nfl.com/schedules/2026/by-week/week-6> | 200 | 2344638 | `51b194c67dfebe6f` | 14 | aria-label=14 | read |
+| 7 | <https://www.nfl.com/schedules/2026/by-week/week-7> | 200 | 2344120 | `e0986aa46c74378e` | 14 | aria-label=14 | read |
 
 **No difference between nfl.com's own page and this project's published record was found in the weeks read.**
 
