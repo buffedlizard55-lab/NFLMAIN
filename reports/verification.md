@@ -1,6 +1,6 @@
 # Data verification report
 
-*Generated automatically by `pipeline/build_site_data.py` v1.2.0 at **2026-10-30T01:14:00Z UTC**.*
+*Generated automatically by `pipeline/build_site_data.py` v1.2.0 at **2026-10-30T07:05:39Z UTC**.*
 
 > Do not edit by hand. This file is the audit trail required by `PROJECT_PROMPT.md` rules R3 and R4: every number on the site must trace back to an official source, and every irregularity must be flagged for human review.
 
@@ -9,8 +9,8 @@
 | Upstream URL | Mode | HTTP | Bytes | SHA-256 (first 16) |
 |---|---|---|---|---|
 | `https://github.com/nflverse/nflverse-data/releases/download/teams/teams_colors_logos.csv` | network | 200 | 18,919 | `4eab559fcf89cb4e` |
-| `https://github.com/nflverse/nflverse-data/releases/download/schedules/games.csv` | network | 200 | 2,186,995 | `258d300952488e6d` |
-| `https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2026.csv.gz` | network | 200 | 7,359,434 | `4c9f9bd1fbab5c3b` |
+| `https://github.com/nflverse/nflverse-data/releases/download/schedules/games.csv` | network | 200 | 2,187,061 | `e26d7b0cbe35c80e` |
+| `https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2026.csv.gz` | network | 200 | 7,433,373 | `653bf713cb9851a8` |
 
 ## 2. Source registry and provenance
 
@@ -140,20 +140,20 @@
 * Seasons in scoreboard index: **28** (1999-2026)
 * Total games: **7,548**
 * Seasons with play-by-play written: **1**
-* Games with play-by-play written: **107**
-* Total plays normalised: **18,738**
+* Games with play-by-play written: **108**
+* Total plays normalised: **18,926**
 * Current season / type / week (inferred, not hardcoded): **2026 REG week 8**
 
 ## 4. Direct read of nfl.com (the league's own site)
 
-**Run.** 2 week page(s) read, 28 game(s) seen, 14 comparable (13 listed but not yet played), **14 score(s) matched**, **0 disagreed**, 0 week page(s) unavailable, 0 game(s) listed by nfl.com that this build has no record of, 0 club name(s) nfl.com printed that this project does not recognise. Read at 2026-10-30T01:14:03Z.
+**Run.** 2 week page(s) read, 28 game(s) seen, 15 comparable (13 listed but not yet played), **15 score(s) matched**, **0 disagreed**, 0 week page(s) unavailable, 0 game(s) listed by nfl.com that this build has no record of, 0 club name(s) nfl.com printed that this project does not recognise. Read at 2026-10-30T07:05:42Z.
 
 These requests were made by this build, with no credentials, to the league's own website. They are the direct-from-NFL check: what nfl.com published, byte count and digest included, versus what this project publishes.
 
 | Week | nfl.com URL | HTTP | Bytes | SHA-256 (first 16) | Games on page | Parsed by | Result |
 |---|---|---|---|---|---|---|---|
-| 7 | <https://www.nfl.com/schedules/2026/by-week/week-7> | 200 | 2352497 | `68100cf62f4bb02e` | 14 | aria-label=14 | read |
-| 8 | <https://www.nfl.com/schedules/2026/by-week/week-8> | 200 | 2406526 | `48d0ffd7f7479c70` | 14 | aria-label=14 | read |
+| 7 | <https://www.nfl.com/schedules/2026/by-week/week-7> | 200 | 2352147 | `3ceace076b0c70d3` | 14 | aria-label=14 | read |
+| 8 | <https://www.nfl.com/schedules/2026/by-week/week-8> | 200 | 2407324 | `87cf9907bf424348` | 14 | aria-label=14 | read |
 
 **No difference between nfl.com's own page and this project's published record was found in the weeks read.**
 
@@ -194,8 +194,8 @@ The two feeds carry different identifier families and must not be used interchan
 |---|---|
 | `games_in_archive` | 7,548 |
 | `games_carrying_a_detail_id` | 272 |
-| `games_with_a_trusted_nfl_api_uuid` | 107 |
-| `games_with_an_official_gamebook_link` | 107 |
+| `games_with_a_trusted_nfl_api_uuid` | 108 |
+| `games_with_an_official_gamebook_link` | 108 |
 
 Evidence: <https://www.nfl.com/games/cowboys-at-buccaneers-2021-reg-1> · <https://www.nfl.com/games/jaguars-at-texans-2021-reg-1> · <https://www.nfl.com/games/cardinals-at-chargers-2026-reg-1>
 
